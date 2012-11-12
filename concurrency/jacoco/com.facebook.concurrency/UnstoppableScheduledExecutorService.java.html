@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>UnstoppableScheduledExecutorService.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">UnstoppableScheduledExecutorService.java</span></div><h1>UnstoppableScheduledExecutorService.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import org.apache.log4j.Logger;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * same as UnstoppableExecutorService but for ScheduledExecutorService
+ */
+public class UnstoppableScheduledExecutorService
+  implements ScheduledExecutorService {
+<span class="fc" id="L41">  private static final Logger LOG = Logger.getLogger(UnstoppableScheduledExecutorService.class);</span>
+
+  private final UnstoppableExecutorServiceCore executorCore;
+  private final ScheduledExecutorService executor;
+  // guarded by: shutdownLock
+<span class="fc" id="L46">  private final Map&lt;ScheduledFuture&lt;?&gt;, ScheduledFuture&lt;?&gt;&gt; </span>
+    outstandingScheduledTasks = 
+    Collections.synchronizedMap(new IdentityHashMap());
+  // this lock is used to make sure that nothing can be put into
+  // outstandingScheduledTasks after shutdown
+<span class="fc" id="L51">  private final ReadWriteLock shutdownLock = new ReentrantReadWriteLock();</span>
+  
+  public UnstoppableScheduledExecutorService(
+    ScheduledExecutorService executor
+<span class="fc" id="L55">  ) {</span>
+<span class="fc" id="L56">    this.executor = executor;</span>
+<span class="fc" id="L57">    executorCore = new UnstoppableExecutorServiceCore();</span>
+<span class="fc" id="L58">  }</span>
+
+  // helper functions that takes a Runnable/Callable and manages the necessary 
+  // lifecycle so that scheduled tasks will
+  //  1. be submitted
+  //  2. have ScheduledFuture stored for canc ellation at shutdown
+
+  private ScheduledFuture&lt;?&gt; internalScheduleRunnable(
+    Runnable runnable, RunnableCallback callback
+  ) {
+    // task.openGate() below will add items to the outstandingScheduledTasks
+    // array. Make sure nothing is added after shutdown
+<span class="fc" id="L70">    shutdownLock.readLock().lock();</span>
+
+    try {
+      // this will track if the task completes 
+<span class="fc" id="L74">      TrackedRunnable trackedTask = executorCore.registerTask(runnable);</span>
+<span class="fc" id="L75">      BookkeepingTask task = new BookkeepingTask&lt;Void&gt;(trackedTask);</span>
+      // this will track if the task is cancelled
+<span class="fc" id="L77">      ScheduledFuture&lt;?&gt; scheduledFuture = </span>
+        executorCore.trackScheduledFuture(callback.submit(task), trackedTask);
+
+<span class="fc" id="L80">      task.openGate(scheduledFuture);</span>
+
+<span class="fc" id="L82">      return scheduledFuture;</span>
+    } finally {
+<span class="fc" id="L84">      shutdownLock.readLock().unlock();</span>
+    }
+  }
+
+  private &lt;V&gt; ScheduledFuture&lt;V&gt; internalScheduleCallable(
+    Callable&lt;V&gt; callable, CallableCallback&lt;V&gt; callback
+  ) {
+<span class="fc" id="L91">    shutdownLock.readLock().lock();</span>
+
+    try {
+      // same logic as above
+<span class="fc" id="L95">      TrackedCallable&lt;V&gt; trackedTask = executorCore.registerTask(callable);</span>
+<span class="fc" id="L96">      BookkeepingTask task = new BookkeepingTask&lt;V&gt;(trackedTask);</span>
+<span class="fc" id="L97">      ScheduledFuture&lt;V&gt; scheduledFuture = </span>
+        executorCore.trackScheduledFuture(callback.submit(task), trackedTask);
+
+<span class="fc" id="L100">      task.openGate(scheduledFuture);</span>
+
+<span class="fc" id="L102">      return scheduledFuture;</span>
+    } finally {
+<span class="pc" id="L104">      shutdownLock.readLock().unlock();</span>
+    }
+  }
+
+  // cancel any scheduled tasks
+  private void cancelPendingTasks() {
+    for (IdentityHashMap.Entry&lt;ScheduledFuture&lt;?&gt;, ScheduledFuture&lt;?&gt;&gt; entry :
+<span class="fc bfc" id="L111" title="All 2 branches covered.">      outstandingScheduledTasks.entrySet()</span>
+      ) {
+<span class="fc" id="L113">      entry.getValue().cancel(false);</span>
+<span class="fc" id="L114">    }</span>
+<span class="fc" id="L115">  }</span>
+
+  @Override
+  public ScheduledFuture&lt;?&gt; schedule(
+    Runnable command, final long delay, final TimeUnit unit
+  ) {
+<span class="fc" id="L121">    return internalScheduleRunnable(command, new RunnableCallback() {</span>
+      @Override
+      public ScheduledFuture&lt;?&gt; submit(Runnable task) {
+<span class="fc" id="L124">        return executor.schedule(task, delay, unit);</span>
+      }
+    });
+  }
+
+  @Override
+  public &lt;V&gt; ScheduledFuture&lt;V&gt; schedule(
+    Callable&lt;V&gt; callable, final long delay, final TimeUnit unit
+  ) {
+<span class="fc" id="L133">    return internalScheduleCallable(callable, new CallableCallback&lt;V&gt;() {</span>
+      @Override
+      public ScheduledFuture&lt;V&gt; submit(Callable&lt;V&gt; task) {
+<span class="fc" id="L136">        return executor.schedule(task, delay, unit);</span>
+      }
+    });
+  }
+
+  @Override
+  public ScheduledFuture&lt;?&gt; scheduleAtFixedRate(
+    final Runnable command,
+    final long initialDelay,
+    final long period,
+    final TimeUnit unit
+  ) {
+<span class="fc" id="L148">    return internalScheduleRunnable(command, new RunnableCallback() {</span>
+      @Override
+      public ScheduledFuture&lt;?&gt; submit(Runnable task) {
+<span class="fc" id="L151">        return executor.scheduleAtFixedRate(task, initialDelay, period, unit);</span>
+      }
+    });
+  }
+
+  @Override
+  public ScheduledFuture&lt;?&gt; scheduleWithFixedDelay(
+    final Runnable command,
+    final long initialDelay,
+    final long delay,
+    final TimeUnit unit
+  ) {
+<span class="fc" id="L163">    return internalScheduleRunnable(command, new RunnableCallback() {</span>
+      @Override
+      public ScheduledFuture&lt;?&gt; submit(Runnable task) {
+<span class="fc" id="L166">        return executor.scheduleWithFixedDelay(command, initialDelay, delay, unit);</span>
+      }
+    }
+    );
+  }
+
+  @Override
+  public &lt;T&gt; Future&lt;T&gt; submit(Callable&lt;T&gt; task) {
+<span class="nc" id="L174">    TrackedCallable&lt;T&gt; trackedTask = executorCore.registerTask(task);</span>
+
+<span class="nc" id="L176">    return executorCore.trackFuture(executor.submit(trackedTask), trackedTask);</span>
+  }
+
+  @Override
+  public &lt;T&gt; Future&lt;T&gt; submit(Runnable task, T result) {
+<span class="fc" id="L181">    TrackedRunnable trackedTask = executorCore.registerTask(task);</span>
+
+<span class="fc" id="L183">    return executorCore.trackFuture(</span>
+      executor.submit(trackedTask, result), trackedTask
+    );
+  }
+
+  @Override
+  public Future&lt;?&gt; submit(Runnable task) {
+<span class="fc" id="L190">    TrackedRunnable trackedTask = executorCore.registerTask(task);</span>
+
+<span class="fc" id="L192">    return executorCore.trackFuture(executor.submit(trackedTask), trackedTask);</span>
+  }
+
+  @Override
+  public &lt;T&gt; List&lt;Future&lt;T&gt;&gt; invokeAll(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks)
+    throws InterruptedException {
+<span class="nc" id="L198">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = </span>
+      executorCore.registerCallableList(tasks);
+
+<span class="nc" id="L201">    return executorCore.trackFutureList(</span>
+      executor.invokeAll(trackedTaskList), trackedTaskList
+    );
+  }
+
+  @Override
+  public &lt;T&gt; List&lt;Future&lt;T&gt;&gt; invokeAll(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks, long timeout, TimeUnit unit)
+    throws InterruptedException {
+<span class="nc" id="L209">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = </span>
+      executorCore.registerCallableList(tasks);
+
+<span class="nc" id="L212">    return executorCore.trackFutureList(</span>
+      executor.invokeAll(trackedTaskList, timeout, unit), trackedTaskList
+    );
+  }
+
+  @Override
+  public &lt;T&gt; T invokeAny(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks)
+    throws InterruptedException, ExecutionException {
+    
+<span class="nc" id="L221">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = </span>
+      executorCore.registerCallableList(tasks);
+
+<span class="nc" id="L224">    return executor.invokeAny(trackedTaskList);</span>
+  }
+
+  @Override
+  public &lt;T&gt; T invokeAny(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks, long timeout, TimeUnit unit)
+    throws InterruptedException, ExecutionException, TimeoutException {
+    
+<span class="nc" id="L231">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = </span>
+      executorCore.registerCallableList(tasks);
+    
+<span class="nc" id="L234">    return executor.invokeAny(trackedTaskList, timeout, unit);</span>
+  }
+
+  @Override
+  public void execute(Runnable command) {
+<span class="fc" id="L239">    executor.execute(executorCore.registerTask(command));</span>
+<span class="fc" id="L240">  }</span>
+
+  // shutdown/termination functions delegate to the UnstoppableExecutorCore
+
+  @Override
+  public void shutdown() {
+    // the core uses the same impl here
+<span class="fc" id="L247">    shutdownNow();</span>
+<span class="fc" id="L248">  }</span>
+
+  @Override
+  public List&lt;Runnable&gt; shutdownNow() {
+    // this blocks any internalSchedule*() calls until we shutdown the core.
+    // it also blocks remove on outstandingScheduledTasks to avoid a 
+    // ConcurrentModificationException
+<span class="fc" id="L255">    shutdownLock.writeLock().lock();</span>
+    
+    try {
+<span class="fc" id="L258">    List&lt;Runnable&gt; runnableList = executorCore.shutdownNow();</span>
+    
+<span class="fc" id="L260">    cancelPendingTasks();</span>
+    
+<span class="fc" id="L262">    return runnableList;</span>
+    } finally {
+<span class="pc" id="L264">      shutdownLock.writeLock().unlock();</span>
+    } 
+  }
+
+  @Override
+  public boolean isShutdown() {
+<span class="fc" id="L270">    return executorCore.isShutdown();</span>
+  }
+
+  @Override
+  public boolean isTerminated() {
+<span class="fc" id="L275">    return executorCore.isTerminated();</span>
+  }
+
+  @Override
+  public boolean awaitTermination(long timeout, TimeUnit unit)
+    throws InterruptedException {
+<span class="fc" id="L281">    return executorCore.awaitTermination(timeout, unit);</span>
+  }
+
+  /**
+   * class that wraps a Runnable/Callable and handles :
+   * 1. put()/remove() of the ScheduledFuture into a hash
+   * 2. gating so that the task cannot be run until the future is in the hash
+   * (avoid race condition that we remove() before we put())
+   *
+   * @param &lt;V&gt; : return result of the Callable
+   */
+  private class BookkeepingTask&lt;V&gt; implements Runnable, Callable&lt;V&gt; {
+<span class="fc" id="L293">    private final CountDownLatch gate = new CountDownLatch(1);</span>
+    private final Callable&lt;V&gt; callable;
+    private final Runnable runnable;
+    private ScheduledFuture&lt;?&gt; future;
+
+<span class="fc" id="L298">    private BookkeepingTask(Callable&lt;V&gt; callable) {</span>
+<span class="fc" id="L299">      this.runnable = null;</span>
+<span class="fc" id="L300">      this.callable = callable;</span>
+<span class="fc" id="L301">    }</span>
+
+<span class="fc" id="L303">    private BookkeepingTask(Runnable runnable) {</span>
+<span class="fc" id="L304">      this.runnable = runnable;</span>
+<span class="fc" id="L305">      this.callable = null;</span>
+<span class="fc" id="L306">    }</span>
+
+    /**
+     * does the prologue for a task which also enables it to start
+     *
+     * @param future future for this task; will be stored in an IdentityHash
+     */
+    public void openGate(ScheduledFuture&lt;V&gt; future) {
+<span class="fc" id="L314">      this.future = future;</span>
+<span class="fc" id="L315">      outstandingScheduledTasks.put(future, future);</span>
+<span class="fc" id="L316">      gate.countDown();</span>
+<span class="fc" id="L317">    }</span>
+
+    private V internalRun() throws Exception {
+      try {
+<span class="fc" id="L321">        gate.await();</span>
+
+<span class="pc bpc" id="L323" title="1 of 2 branches missed.">        if (runnable != null) {</span>
+<span class="fc" id="L324">          runnable.run();</span>
+
+<span class="fc" id="L326">          return null;</span>
+        } else {
+<span class="nc" id="L328">          return callable.call();</span>
+        }
+<span class="nc" id="L330">      } catch (InterruptedException e) {</span>
+<span class="nc" id="L331">        LOG.info(&quot;interrupted, skipping execution of task&quot;);</span>
+<span class="nc" id="L332">        Thread.currentThread().interrupt();</span>
+
+<span class="nc" id="L334">        return null;</span>
+      } finally {
+<span class="pc" id="L336">        cleanup();</span>
+      }
+    }
+    
+    private void cleanup() {
+      // we can't modify outstandingScheduledTasks while we're shutting down
+<span class="fc" id="L342">      shutdownLock.readLock().lock();</span>
+      
+      try {
+<span class="fc" id="L345">        outstandingScheduledTasks.remove(future);        </span>
+      } finally {
+<span class="pc" id="L347">        shutdownLock.readLock().unlock();        </span>
+<span class="fc" id="L348">      }</span>
+<span class="fc" id="L349">    }</span>
+
+    @Override
+    public void run() {
+      try {
+<span class="fc" id="L354">        internalRun();</span>
+<span class="nc" id="L355">      } catch (Exception e) {</span>
+<span class="nc" id="L356">        LOG.error(&quot;exception during execution&quot;, e);</span>
+<span class="fc" id="L357">      }</span>
+<span class="fc" id="L358">    }</span>
+
+
+    @Override
+    public V call() throws Exception {
+<span class="nc" id="L363">      return internalRun();</span>
+    }
+  }
+
+  private interface RunnableCallback&lt;V&gt; {
+    public ScheduledFuture&lt;?&gt; submit(Runnable task);
+  }
+
+  private interface CallableCallback&lt;V&gt; {
+    public ScheduledFuture&lt;V&gt; submit(Callable&lt;V&gt; task);
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

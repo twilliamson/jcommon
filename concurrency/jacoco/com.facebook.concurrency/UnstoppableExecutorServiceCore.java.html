@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>UnstoppableExecutorServiceCore.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">UnstoppableExecutorServiceCore.java</span></div><h1>UnstoppableExecutorServiceCore.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.collections.ListMapper;
+import com.facebook.collectionsbase.Mapper;
+import org.joda.time.DateTimeUtils;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * core class that Unstoppable[Scheduled]ExecutorService delegates termination
+ * methods to in order to guard shutdown
+ */
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">class UnstoppableExecutorServiceCore {</span>
+<span class="fc" id="L39">  private final AtomicInteger remaining = new AtomicInteger(0);</span>
+<span class="fc" id="L40">  private volatile boolean isShutdown = false;</span>
+
+  public List&lt;Runnable&gt; registerRunnableList(List&lt;Runnable&gt; taskList) {
+<span class="nc bnc" id="L43" title="All 2 branches missed.">    if (isShutdown) {</span>
+<span class="nc" id="L44">      throw new RejectedExecutionException(&quot;executor shutdown already&quot;);</span>
+    }
+
+<span class="nc" id="L47">    List&lt;Runnable&gt; result = new ArrayList&lt;Runnable&gt;();</span>
+
+<span class="nc bnc" id="L49" title="All 2 branches missed.">    for (Runnable task : taskList) {</span>
+<span class="nc" id="L50">      result.add(new TrackedRunnableImpl(task));</span>
+<span class="nc" id="L51">    }</span>
+
+<span class="nc" id="L53">    return result;</span>
+  }
+
+  public &lt;V&gt; List&lt;TrackedCallable&lt;V&gt;&gt; registerCallableList(
+    Collection&lt;? extends Callable&lt;V&gt;&gt; taskList
+  ) {
+<span class="nc bnc" id="L59" title="All 2 branches missed.">    if (isShutdown()) {</span>
+<span class="nc" id="L60">      throw new RejectedExecutionException(&quot;executor shutdown already&quot;);</span>
+    }
+
+<span class="nc" id="L63">    List&lt;TrackedCallable&lt;V&gt;&gt; result = new ArrayList&lt;TrackedCallable&lt;V&gt;&gt;();</span>
+
+<span class="nc bnc" id="L65" title="All 2 branches missed.">    for (Callable&lt;V&gt; task : taskList) {</span>
+<span class="nc" id="L66">      result.add(new TrackedCallableImpl&lt;V&gt;(task));</span>
+<span class="nc" id="L67">    }</span>
+
+<span class="nc" id="L69">    return result;</span>
+  }
+
+  public TrackedRunnable registerTask(Runnable task) {
+<span class="fc bfc" id="L73" title="All 2 branches covered.">    if (isShutdown()) {</span>
+<span class="fc" id="L74">      throw new RejectedExecutionException(&quot;executor shutdown already&quot;);</span>
+    }
+
+<span class="fc" id="L77">    return new TrackedRunnableImpl(task);</span>
+  }
+
+  public &lt;V&gt; TrackedCallable&lt;V&gt; registerTask(final Callable&lt;V&gt; task) {
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">    if (isShutdown()) {</span>
+<span class="nc" id="L82">      throw new RejectedExecutionException(&quot;executor shutdown already&quot;);</span>
+    }
+
+<span class="fc" id="L85">    return new TrackedCallableImpl&lt;V&gt;(task);</span>
+  }
+
+  private void decrementRemaining() {
+<span class="fc bfc" id="L89" title="All 2 branches covered.">    if (remaining.decrementAndGet() == 0) {</span>
+<span class="fc" id="L90">      synchronized (remaining) {</span>
+<span class="fc" id="L91">        remaining.notifyAll();</span>
+<span class="pc" id="L92">      }</span>
+    }
+<span class="fc" id="L94">  }</span>
+
+  public synchronized void shutdown() {
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">    if (isShutdown) {</span>
+<span class="nc" id="L98">      return;</span>
+    }
+
+<span class="fc" id="L101">    isShutdown = true;</span>
+<span class="fc" id="L102">  }</span>
+
+  public List&lt;Runnable&gt; shutdownNow() {
+    // for now, shutdownNow() is equivalent to shutdown()
+<span class="fc" id="L106">    shutdown();</span>
+
+    // TODO: we can track started tasks and actually interrupt them
+
+<span class="fc" id="L110">    return Collections.emptyList();</span>
+  }
+
+  public boolean isShutdown() {
+<span class="fc" id="L114">    return isShutdown;</span>
+  }
+
+  public boolean isTerminated() {
+<span class="pc bpc" id="L118" title="2 of 4 branches missed.">    assert remaining.get() &gt;= 0;</span>
+
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">    return remaining.get() == 0;</span>
+  }
+
+  public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+<span class="fc bfc" id="L124" title="All 2 branches covered.">    if (!isShutdown) {</span>
+<span class="fc" id="L125">      return false;</span>
+    }
+
+<span class="fc" id="L128">    long start = DateTimeUtils.currentTimeMillis();</span>
+
+<span class="fc" id="L130">    synchronized (remaining) {</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">      while (remaining.get() &gt; 0) {</span>
+        // timed wait due to likely lost notifications, so relatively short also
+<span class="fc" id="L133">        remaining.wait(50);</span>
+
+<span class="fc" id="L135">        long elapsedMillis = DateTimeUtils.currentTimeMillis() - start;</span>
+
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">        if (elapsedMillis &gt; unit.toMillis(timeout)) {</span>
+<span class="nc" id="L138">          return false;</span>
+        }
+<span class="fc" id="L140">      }</span>
+<span class="pc" id="L141">    }</span>
+
+<span class="fc" id="L143">    return true;</span>
+  }
+
+  public &lt;V&gt; List&lt;Future&lt;V&gt;&gt; trackFutureList(
+    List&lt;Future&lt;V&gt;&gt; futureList, List&lt;? extends Completable&gt; completableList
+  ) {
+<span class="nc" id="L149">    return ListMapper.map(futureList, new FutureMapper&lt;V&gt;(completableList));</span>
+  }
+
+  public &lt;V&gt; Future&lt;V&gt; trackFuture(Future&lt;V&gt; future, Completable task) {
+<span class="fc" id="L153">    return new TrackedFuture&lt;V&gt;(future, task);</span>
+  }
+
+  public &lt;V&gt; ScheduledFuture&lt;V&gt; trackScheduledFuture(
+    ScheduledFuture&lt;V&gt; future, Completable task
+  ) {
+<span class="fc" id="L159">    return new TrackedScheduledFuture&lt;V&gt;(future, task);</span>
+  }
+
+  private class TrackedRunnableImpl implements TrackedRunnable {
+    private final Runnable delegate;
+<span class="fc" id="L164">    private final AtomicBoolean hasCompleted = new AtomicBoolean(false);</span>
+
+<span class="fc" id="L166">    private TrackedRunnableImpl(Runnable delegate) {</span>
+<span class="fc" id="L167">      this.delegate = delegate;</span>
+<span class="fc" id="L168">      remaining.incrementAndGet();</span>
+<span class="fc" id="L169">    }</span>
+
+    @Override
+    public void run() {
+      try {
+<span class="fc" id="L174">        delegate.run();</span>
+      } finally {
+<span class="pc" id="L176">        complete();</span>
+<span class="fc" id="L177">      }</span>
+<span class="fc" id="L178">    }</span>
+
+    public void complete() {
+<span class="fc bfc" id="L181" title="All 2 branches covered.">      if (hasCompleted.compareAndSet(false, true)) {</span>
+<span class="fc" id="L182">        decrementRemaining();</span>
+      }
+<span class="fc" id="L184">    }</span>
+  }
+
+  private class TrackedCallableImpl&lt;V&gt; implements TrackedCallable&lt;V&gt; {
+
+    private final Callable&lt;V&gt; delegate;
+<span class="fc" id="L190">    private final AtomicBoolean hasCompleted = new AtomicBoolean(false);</span>
+
+<span class="fc" id="L192">    private TrackedCallableImpl(Callable&lt;V&gt; delegate) {</span>
+<span class="fc" id="L193">      this.delegate = delegate;</span>
+<span class="fc" id="L194">      remaining.incrementAndGet();</span>
+<span class="fc" id="L195">    }</span>
+
+    @Override
+    public V call() throws Exception {
+      try {
+<span class="fc" id="L200">        return delegate.call();</span>
+      } finally {
+<span class="pc" id="L202">        complete();</span>
+      }
+    }
+
+    public void complete() {
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">      if (hasCompleted.compareAndSet(false, true)) {</span>
+<span class="fc" id="L208">        decrementRemaining();</span>
+      }
+<span class="fc" id="L210">    }</span>
+  }
+
+  private class TrackedFuture&lt;V&gt; extends WrappedFuture&lt;V&gt; {
+    private final Completable task;
+
+<span class="fc" id="L216">    private TrackedFuture(Future&lt;V&gt; delegate, Completable task) {</span>
+<span class="fc" id="L217">      super(delegate);</span>
+<span class="fc" id="L218">      this.task = task;</span>
+<span class="fc" id="L219">    }</span>
+
+    @Override
+    public boolean cancel(boolean mayInterruptIfRunning) {
+<span class="nc" id="L223">      task.complete();</span>
+
+<span class="nc" id="L225">      return super.cancel(mayInterruptIfRunning);</span>
+    }
+  }
+
+  private class TrackedScheduledFuture&lt;V&gt; extends WrappedScheduledFuture&lt;V&gt; {
+    private final Completable task;
+
+    private TrackedScheduledFuture(
+      ScheduledFuture&lt;V&gt; delegate, Completable task
+<span class="fc" id="L234">    ) {</span>
+<span class="fc" id="L235">      super(delegate);</span>
+<span class="fc" id="L236">      this.task = task;</span>
+<span class="fc" id="L237">    }</span>
+
+    @Override
+    public boolean cancel(boolean mayInterruptIfRunning) {
+<span class="fc" id="L241">      task.complete();</span>
+
+<span class="fc" id="L243">      return super.cancel(mayInterruptIfRunning);</span>
+    }
+  }
+
+<span class="fc" id="L247">  private class FutureMapper&lt;V&gt; implements Mapper&lt;Future&lt;V&gt;, Future&lt;V&gt;&gt; {</span>
+    private final List&lt;? extends Completable&gt; completableList;
+<span class="nc" id="L249">    private int index = 0;</span>
+
+<span class="nc" id="L251">    private FutureMapper(List&lt;? extends Completable&gt; completableList) {</span>
+<span class="nc" id="L252">      this.completableList = completableList;</span>
+<span class="nc" id="L253">    }</span>
+
+    @Override
+    public Future&lt;V&gt; map(Future&lt;V&gt; input) {
+<span class="nc" id="L257">      TrackedFuture&lt;V&gt; trackedFuture = new TrackedFuture&lt;V&gt;(input, completableList.get(index));</span>
+
+<span class="nc" id="L259">      index++;</span>
+
+<span class="nc" id="L261">      return trackedFuture;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

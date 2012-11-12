@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FutureHelper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">FutureHelper.java</span></div><h1>FutureHelper.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.util.exceptions.ExceptionHandler;
+
+import java.util.concurrent.Callable;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * helper class that decorates FutureTask.get():
+ * 1. handles FutureTask exceptions according to a handler 
+ * 2. runs the underlying task at most once
+ * 3. returns the result
+ */
+
+public class FutureHelper&lt;T, E extends Exception&gt; extends FutureTask&lt;T&gt; {
+<span class="fc" id="L32">  private final AtomicBoolean hasRun = new AtomicBoolean(false);</span>
+  private final ExceptionHandler&lt;E&gt; exceptionHandler;
+<span class="fc" id="L34">  private volatile boolean generated = false;</span>
+<span class="fc" id="L35">  private volatile boolean error = false;</span>
+
+  public FutureHelper(
+    Callable&lt;T&gt; callable,
+    ExceptionHandler&lt;E&gt; exceptionHandler
+  ) {
+<span class="fc" id="L41">    super(callable);</span>
+<span class="fc" id="L42">    this.exceptionHandler = exceptionHandler;</span>
+<span class="fc" id="L43">  }</span>
+
+  /**
+   * runs the task once.  Other threads will block if another is running
+   * the task.
+   *
+   * @return result of computation
+   * @throws generic E
+   */
+  public T safeGet() throws E {
+<span class="fc bfc" id="L53" title="All 2 branches covered.">    if (hasRun.compareAndSet(false, true)) {</span>
+<span class="fc" id="L54">      run();</span>
+    }
+
+    try {
+      // Future.get() will block until there is a result ready, or until
+      // at least one instance of run() above has completed
+<span class="fc" id="L60">      T t = get();</span>
+<span class="fc" id="L61">      generated = true;</span>
+<span class="fc" id="L62">      return t;</span>
+<span class="fc" id="L63">    } catch (Exception e) {</span>
+<span class="fc" id="L64">      error = true;</span>
+<span class="fc" id="L65">      throw exceptionHandler.handle(e);</span>
+    }
+  }
+
+  public boolean isGenerated() {
+<span class="nc" id="L70">    return generated;</span>
+  }
+
+  public boolean isError() {
+<span class="fc" id="L74">    return error;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

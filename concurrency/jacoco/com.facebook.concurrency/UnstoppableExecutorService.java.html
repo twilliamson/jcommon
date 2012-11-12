@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>UnstoppableExecutorService.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">UnstoppableExecutorService.java</span></div><h1>UnstoppableExecutorService.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * the idea here is that we want to shield an ExecutorService from any call
+ * that might shut it down, while preserving the semantics that any user
+ * of this object can still shut it down, await termination, etc 
+ *  from its perspective
+ * 
+ * Think of it as a localized view of another executor
+ */
+public class UnstoppableExecutorService implements ExecutorService {
+  private final UnstoppableExecutorServiceCore executorCore;
+  private final ExecutorService executor;
+
+<span class="fc" id="L39">  public UnstoppableExecutorService(ExecutorService executor) {</span>
+<span class="fc" id="L40">    this.executor = executor;</span>
+<span class="fc" id="L41">    executorCore = new UnstoppableExecutorServiceCore();</span>
+<span class="fc" id="L42">  }</span>
+
+  @Override
+  public &lt;T&gt; Future&lt;T&gt; submit(Callable&lt;T&gt; task) {
+<span class="fc" id="L46">    return executor.submit(executorCore.registerTask(task));</span>
+  }
+
+  @Override
+  public &lt;T&gt; Future&lt;T&gt; submit(Runnable task, T result) {
+<span class="fc" id="L51">    TrackedRunnable trackedTask = executorCore.registerTask(task);</span>
+
+<span class="fc" id="L53">    return executorCore.trackFuture(executor.submit(trackedTask, result), trackedTask);</span>
+  }
+
+  @Override
+  public Future&lt;?&gt; submit(Runnable task) {
+<span class="fc" id="L58">    TrackedRunnable trackedTask = executorCore.registerTask(task);</span>
+    
+<span class="fc" id="L60">    return executorCore.trackFuture(executor.submit(trackedTask), trackedTask);</span>
+  }
+
+  @Override
+  public &lt;T&gt; List&lt;Future&lt;T&gt;&gt; invokeAll(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks)
+    throws InterruptedException {
+    
+<span class="nc" id="L67">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = executorCore.registerCallableList(tasks);</span>
+
+<span class="nc" id="L69">    return executorCore.trackFutureList(executor.invokeAll(trackedTaskList), trackedTaskList);</span>
+  }
+
+  @Override
+  public &lt;T&gt; List&lt;Future&lt;T&gt;&gt; invokeAll(
+    Collection&lt;? extends Callable&lt;T&gt;&gt; tasks, long timeout, TimeUnit unit
+  ) throws InterruptedException {
+    
+<span class="nc" id="L77">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = </span>
+      executorCore.registerCallableList(tasks);
+
+<span class="nc" id="L80">    return executorCore.trackFutureList(</span>
+      executor.invokeAll(trackedTaskList, timeout, unit), trackedTaskList
+    );
+  }
+
+  @Override
+  public &lt;T&gt; T invokeAny(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks)
+    throws InterruptedException, ExecutionException {
+    
+<span class="nc" id="L89">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = executorCore.registerCallableList(tasks);</span>
+    
+
+<span class="nc" id="L92">    return executor.invokeAny(trackedTaskList);</span>
+  }
+
+  @Override
+  public &lt;T&gt; T invokeAny(Collection&lt;? extends Callable&lt;T&gt;&gt; tasks, long timeout, TimeUnit unit)
+    throws InterruptedException, ExecutionException, TimeoutException {
+    
+<span class="nc" id="L99">    List&lt;TrackedCallable&lt;T&gt;&gt; trackedTaskList = executorCore.registerCallableList(tasks);</span>
+
+<span class="nc" id="L101">    return executor.invokeAny(trackedTaskList, timeout, unit);</span>
+  }
+
+  @Override
+  public void execute(Runnable command) {
+<span class="fc" id="L106">    executor.execute(executorCore.registerTask(command));</span>
+<span class="fc" id="L107">  }</span>
+
+  // shutdown/termination functions delegate to the UnstoppableExecutorCore
+  @Override
+  public void shutdown() {
+<span class="fc" id="L112">    executorCore.shutdown();</span>
+<span class="fc" id="L113">  }</span>
+
+  @Override
+  public List&lt;Runnable&gt; shutdownNow() {
+<span class="fc" id="L117">    return executorCore.shutdownNow();</span>
+  }
+
+  @Override
+  public boolean isShutdown() {
+<span class="fc" id="L122">    return executorCore.isShutdown();</span>
+  }
+
+  @Override
+  public boolean isTerminated() {
+<span class="fc" id="L127">    return executorCore.isTerminated();</span>
+  }
+
+  @Override
+  public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+<span class="fc" id="L132">    return executorCore.awaitTermination(timeout, unit);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
