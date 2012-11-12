@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ConfigAccessor.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon config</a> &gt; <a href="index.html" class="el_package">com.facebook.config</a> &gt; <span class="el_source">ConfigAccessor.java</span></div><h1>ConfigAccessor.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.config;
+
+import com.facebook.collections.ByteArray;
+import com.facebook.collectionsbase.Mapper;
+import org.apache.log4j.Logger;
+import org.joda.time.Duration;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.lang.String;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 1. wraps a JSONObject that contains configuration information.
+ * 2. converts JSONExceptions to a runtime ConfigException
+ * 3. provides clean conversions to primitive types and annotated bean classes
+ */
+public class ConfigAccessor {
+<span class="fc" id="L41">  private static final Logger LOG = Logger.getLogger(ConfigAccessor.class);</span>
+
+  private final JSONObject jsonObject;
+
+<span class="fc" id="L45">  public ConfigAccessor(JSONObject jsonObject) {</span>
+<span class="fc" id="L46">    this.jsonObject = jsonObject;</span>
+<span class="fc" id="L47">  }</span>
+
+  public static ConfigAccessor emptyConfig() {
+<span class="nc" id="L50">    return new ConfigAccessor(new JSONObject());</span>
+  }
+
+  public &lt;T&gt; T getBean(
+    String key,
+    Class&lt;? extends ExtractableBeanBuilder&lt;T&gt;&gt; beanBuilderClass
+  ) {
+    try {
+<span class="fc" id="L58">      JSONObject jsonBean = get(key, null, new JSONObjectExtractor());</span>
+<span class="fc" id="L59">      ConfigAccessor jsonBeanAccessor = new ConfigAccessor(jsonBean);</span>
+<span class="fc" id="L60">      Object beanBuilder = beanBuilderClass.newInstance();</span>
+
+<span class="fc bfc" id="L62" title="All 2 branches covered.">      for (Method m : beanBuilderClass.getMethods()) {</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        if (m.getName().toLowerCase().startsWith(&quot;set&quot;)) {</span>
+<span class="fc" id="L64">          FieldExtractor extractor = m.getAnnotation(FieldExtractor.class);</span>
+
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">          if (extractor != null) {</span>
+<span class="pc bpc" id="L67" title="1 of 2 branches missed.">            if (!Extractor.class.isAssignableFrom(extractor.extractorClass())) {</span>
+<span class="nc" id="L68">              String message = String.format(&quot;extractor %s does not extend Extractor.class&quot;,</span>
+                extractor
+              );
+
+<span class="nc" id="L72">              LOG.error(message);</span>
+
+<span class="nc" id="L74">              throw new ConfigException(message);</span>
+            }
+
+            // if the parameter isn't optional check, or if it's optional
+            // and it is present; ie, if it's not optional and not there, let
+            // get() throw a ConfigException
+<span class="pc bpc" id="L80" title="1 of 4 branches missed.">            if (!extractor.optional() || jsonBeanAccessor.hasKey(extractor.key())) {</span>
+<span class="fc" id="L81">              Object value = jsonBeanAccessor.get(</span>
+                extractor.key(),
+                null,
+                (Extractor) extractor.extractorClass().newInstance()
+              );
+
+<span class="fc" id="L87">              m.invoke(beanBuilder, value);</span>
+<span class="fc" id="L88">            }</span>
+          } else {
+<span class="nc" id="L90">            LOG.warn(&quot;unable to find annotation for setter method &quot; + m.getName());</span>
+          }
+        }
+      }
+
+<span class="fc" id="L95">      return ((ExtractableBeanBuilder&lt;T&gt;) beanBuilder).build();</span>
+<span class="nc" id="L96">    } catch (InstantiationException e) {</span>
+<span class="nc" id="L97">      throw new ConfigException(e);</span>
+<span class="nc" id="L98">    } catch (IllegalAccessException e) {</span>
+<span class="nc" id="L99">      throw new ConfigException(e);</span>
+<span class="nc" id="L100">    } catch (InvocationTargetException e) {</span>
+<span class="nc" id="L101">      throw new ConfigException(e);</span>
+    }
+  }
+
+  public Class&lt;?&gt; getClass(String key, Class&lt;?&gt; defaultValue) {
+<span class="nc" id="L106">    return get(key, defaultValue, new ClassExtractor());</span>
+  }
+
+  public boolean hasKey(String key) {
+<span class="fc" id="L110">    return jsonObject.has(key);</span>
+  }
+
+  public Duration getDuration(String key, String defaultValue) {
+<span class="nc" id="L114">    return new Duration(getDurationMillis(key, defaultValue));</span>
+  }
+
+  public long getDurationSeconds(String key, String defaultValue) {
+<span class="nc" id="L118">    return ConfigUtil.getDurationMillis(getString(key, defaultValue)) / 1000;</span>
+  }
+
+  public long getDurationMillis(String key, String defaultValue) {
+<span class="nc" id="L122">    return ConfigUtil.getDurationMillis(getString(key, defaultValue));</span>
+  }
+
+  public long getSizeBytes(String key, String defaultValue) {
+<span class="nc" id="L126">    return ConfigUtil.getSizeBytes(getString(key, defaultValue));</span>
+  }
+
+  public long getSizeBytes(String key, Long defaultValue) {
+<span class="nc bnc" id="L130" title="All 2 branches missed.">    return hasKey(key) ?</span>
+      ConfigUtil.getSizeBytes(getString(key)) : defaultValue;
+  }
+
+  public Boolean getBoolean(String key) throws ConfigException {
+<span class="nc" id="L135">    return getBoolean(key, null);</span>
+  }
+
+  public Boolean getBoolean(String key, Boolean defaultValue)
+    throws ConfigException {
+<span class="nc" id="L140">    return get(key, defaultValue, new BooleanExtractor());</span>
+  }
+
+  public String getString(String key) throws ConfigException {
+<span class="fc" id="L144">    return getString(key, null);</span>
+  }
+
+  public String getString(String key, String defaultValue) {
+<span class="fc" id="L148">    return get(key, defaultValue, new StringExtractor());</span>
+  }
+
+  public int getInt(String key) throws ConfigException {
+<span class="fc" id="L152">    return getInt(key, null);</span>
+  }
+
+  public int getInt(String key, Integer defaultValue) {
+<span class="fc" id="L156">    return get(key, defaultValue, new IntegerExtractor());</span>
+  }
+
+  public long getLong(String key) throws ConfigException {
+<span class="nc" id="L160">    return getLong(key, null);</span>
+  }
+
+  public long getLong(String key, Long defaultValue) {
+<span class="nc" id="L164">    return get(key, defaultValue, new LongExtractor());</span>
+  }
+
+  public double getDouble(String key) {
+<span class="nc" id="L168">    return getDouble(key, null);</span>
+  }
+
+  public double getDouble(String key, Double defaultValue) {
+<span class="nc" id="L172">    return get(key, defaultValue, new DoubleExtractor());</span>
+  }
+
+  public Map&lt;String, String&gt; getStringMap(String key) {
+<span class="nc" id="L176">    return get(key, null, new Extractor&lt;Map&lt;String, String&gt;&gt;() {</span>
+      @Override
+      public Map&lt;String, String&gt; extract(String key, JSONObject jsonObject)
+        throws JSONException {
+<span class="nc" id="L180">        Map&lt;String, String&gt; map = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L181">        JSONObject jsonMap = jsonObject.getJSONObject(key);</span>
+<span class="nc" id="L182">        ConfigAccessor mapAccessor = new ConfigAccessor(jsonMap);</span>
+<span class="nc" id="L183">        Iterator&lt;String&gt; keys = jsonMap.keys();</span>
+
+<span class="nc bnc" id="L185" title="All 2 branches missed.">        while (keys.hasNext()) {</span>
+<span class="nc" id="L186">          String mapKey = keys.next();</span>
+
+<span class="nc" id="L188">          map.put(mapKey, mapAccessor.getString(mapKey));</span>
+<span class="nc" id="L189">        }</span>
+
+<span class="nc" id="L191">        return map;</span>
+      }
+    });
+  }
+
+  public &lt;T&gt; List&lt;T&gt; getList(String key, Mapper&lt;String, T&gt; converter) {
+<span class="fc" id="L197">    List&lt;T&gt; result = new ArrayList&lt;&gt;();</span>
+
+<span class="fc bfc" id="L199" title="All 2 branches covered.">    for (String item : getStringList(key)) {</span>
+<span class="fc" id="L200">      result.add(converter.map(item));</span>
+<span class="fc" id="L201">    }</span>
+
+<span class="fc" id="L203">    return result;</span>
+  }
+
+  public List&lt;String&gt; getStringList(String key) throws ConfigException {
+    JSONArray items;
+<span class="fc" id="L208">    List&lt;String&gt; result = new ArrayList&lt;&gt;();</span>
+
+    try {
+<span class="fc" id="L211">      items = jsonObject.getJSONArray(key);</span>
+
+<span class="fc bfc" id="L213" title="All 2 branches covered.">      for (int i = 0; i &lt; items.length(); i++) {</span>
+<span class="fc" id="L214">        result.add(items.getString(i));</span>
+      }
+<span class="nc" id="L216">    } catch (JSONException e) {</span>
+<span class="nc" id="L217">      throw new ConfigException(</span>
+        &quot;unable to parse string list for key &quot; + key,
+        e
+      );
+<span class="fc" id="L221">    }</span>
+
+<span class="fc" id="L223">    return result;</span>
+  }
+
+  public List&lt;ByteArray&gt; getByteArrayList(String key) throws ConfigException {
+<span class="nc" id="L227">    List&lt;ByteArray&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">    for (String item : getStringList(key)) {</span>
+<span class="nc" id="L229">      result.add(ByteArray.wrap(item.getBytes()));</span>
+<span class="nc" id="L230">    }</span>
+<span class="nc" id="L231">    return result;</span>
+  }
+
+  public List&lt;String&gt; getKeys() {
+<span class="nc" id="L235">    List&lt;String&gt; keys = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L236">    Iterator&lt;String&gt; keysIterator = jsonObject.keys();</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">    while (keysIterator.hasNext()) {</span>
+<span class="nc" id="L238">      keys.add(keysIterator.next());</span>
+    }
+<span class="nc" id="L240">    return keys;</span>
+  }
+
+  private &lt;T&gt; T get(String key, T defaultValue, Extractor&lt;T&gt; extractor)
+    throws ConfigException {
+    try {
+<span class="fc bfc" id="L246" title="All 2 branches covered.">      if (jsonObject.has(key)) {</span>
+<span class="fc" id="L247">        return extractor.extract(key, jsonObject);</span>
+<span class="pc bpc" id="L248" title="1 of 2 branches missed.">      } else if (defaultValue != null) {</span>
+<span class="nc" id="L249">        return defaultValue;</span>
+      } else {
+<span class="fc" id="L251">        throw new ConfigException(&quot;missing property: &quot; + key);</span>
+      }
+<span class="nc" id="L253">    } catch (JSONException e) {</span>
+<span class="nc" id="L254">      throw new ConfigException(e);</span>
+    }
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L260">    return jsonObject.toString();</span>
+  }
+
+  public String toString(int indentFactor)
+    throws ConfigException {
+    try {
+<span class="nc" id="L266">      return jsonObject.toString(indentFactor);</span>
+<span class="nc" id="L267">    } catch (JSONException e) {</span>
+<span class="nc" id="L268">      throw new ConfigException(e);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
