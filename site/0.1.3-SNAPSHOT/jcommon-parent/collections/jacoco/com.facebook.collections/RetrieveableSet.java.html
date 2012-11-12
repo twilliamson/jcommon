@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RetrieveableSet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">RetrieveableSet.java</span></div><h1>RetrieveableSet.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+public class RetrieveableSet&lt;T&gt; implements Set&lt;T&gt; {
+  private final Map&lt;T, T&gt; identityMap;
+
+<span class="nc" id="L27">  public RetrieveableSet(Map&lt;T, T&gt; identityMap) {</span>
+<span class="nc" id="L28">    this.identityMap = identityMap;</span>
+<span class="nc" id="L29">  }</span>
+
+  public RetrieveableSet() {
+<span class="nc" id="L32">    this(new HashMap&lt;T, T&gt;());</span>
+<span class="nc" id="L33">  }</span>
+
+  public T get(T t) {
+<span class="nc" id="L36">    return identityMap.get(t);</span>
+  }
+
+  @Override
+  public int size() {
+<span class="nc" id="L41">    return identityMap.size();</span>
+  }
+
+  @Override
+  public boolean isEmpty() {
+<span class="nc" id="L46">    return identityMap.isEmpty();</span>
+  }
+
+  @Override
+  public boolean contains(Object o) {
+<span class="nc" id="L51">    return identityMap.containsKey(o);</span>
+  }
+
+  @Override
+  public Iterator&lt;T&gt; iterator() {
+<span class="nc" id="L56">    return identityMap.keySet().iterator();</span>
+  }
+
+  @Override
+  public Object[] toArray() {
+<span class="nc" id="L61">    return identityMap.keySet().toArray();</span>
+  }
+
+  @Override
+  public &lt;T&gt; T[] toArray(T[] ts) {
+<span class="nc" id="L66">    return identityMap.keySet().toArray(ts);</span>
+  }
+
+  @Override
+  public boolean add(T t) {
+<span class="nc bnc" id="L71" title="All 2 branches missed.">    if (identityMap.containsKey(t)) {</span>
+<span class="nc" id="L72">      return false;</span>
+    }
+<span class="nc" id="L74">    identityMap.put(t, t);</span>
+<span class="nc" id="L75">    return true;</span>
+  }
+
+  @Override
+  public boolean remove(Object o) {
+<span class="nc bnc" id="L80" title="All 2 branches missed.">    return identityMap.remove(o) != null;</span>
+  }
+
+  @Override
+  public boolean containsAll(Collection&lt;?&gt; objects) {
+<span class="nc" id="L85">    return identityMap.keySet().containsAll(objects);</span>
+  }
+
+  @Override
+  public boolean addAll(Collection&lt;? extends T&gt; ts) {
+<span class="nc" id="L90">    boolean changed = false;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    for (T t : ts) {</span>
+<span class="nc" id="L92">      changed |= add(t);</span>
+<span class="nc" id="L93">    }</span>
+<span class="nc" id="L94">    return changed;</span>
+  }
+
+  @Override
+  public boolean retainAll(Collection&lt;?&gt; objects) {
+<span class="nc" id="L99">    return identityMap.keySet().retainAll(objects);</span>
+  }
+
+  @Override
+  public boolean removeAll(Collection&lt;?&gt; objects) {
+<span class="nc" id="L104">    return identityMap.keySet().removeAll(objects);</span>
+  }
+
+  @Override
+  public void clear() {
+<span class="nc" id="L109">    identityMap.clear();</span>
+<span class="nc" id="L110">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

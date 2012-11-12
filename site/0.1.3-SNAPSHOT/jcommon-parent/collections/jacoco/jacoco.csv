@@ -1,0 +1,67 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+collections,com.facebook.collections,Pair,97,15,24,0,16,6,15,3,3,3
+collections,com.facebook.collections,PackedByteArray,124,387,12,32,22,83,14,24,4,12
+collections,com.facebook.collections,LongArray.Iter,15,188,4,18,3,39,4,11,0,4
+collections,com.facebook.collections,WrappedSet,103,0,6,0,24,0,21,0,18,0
+collections,com.facebook.collections,ConcurrentSetMap,0,6,0,0,0,2,0,1,0,1
+collections,com.facebook.collections,WrappedIterator,18,0,0,0,7,0,4,0,4,0
+collections,com.facebook.collections,ByteArray.PureByteArray,22,23,2,0,2,7,3,5,2,5
+collections,com.facebook.collections,CounterMap,88,78,6,4,16,19,9,5,4,5
+collections,com.facebook.collections,TranslatingIterable,18,0,0,0,5,0,2,0,2,0
+collections,com.facebook.collections,RangeSet,0,319,1,33,0,47,1,24,0,8
+collections,com.facebook.collections,DynamicIterator,21,106,2,6,6,25,3,6,1,4
+collections,com.facebook.collections,PeekableIterator,52,0,8,0,16,0,10,0,6,0
+collections,com.facebook.collections,ByteArray.ByteArrayComparator,12,65,6,16,6,20,5,8,0,2
+collections,com.facebook.collections,PriorityQueueHeap,52,0,0,0,13,0,9,0,9,0
+collections,com.facebook.collections,MixedTypeMap,0,64,0,0,0,18,0,8,0,8
+collections,com.facebook.collections,RangeSet.LongSegment,4,43,2,4,1,11,2,7,0,6
+collections,com.facebook.collections,RetrieveableSet,112,0,6,0,27,0,19,0,16,0
+collections,com.facebook.collections,StringKeyedMixTypedMap,7,0,0,0,4,0,2,0,2,0
+collections,com.facebook.collections,UniTriple,6,0,0,0,2,0,1,0,1,0
+collections,com.facebook.collections,CounterMap.new Mapper() {...},17,0,0,0,2,0,2,0,2,0
+collections,com.facebook.collections,SetMapImpl,67,51,5,3,14,13,7,3,4,2
+collections,com.facebook.collections,EntryValueMapper,6,0,0,0,2,0,2,0,2,0
+collections,com.facebook.collections,Triple,151,0,32,0,27,0,23,0,7,0
+collections,com.facebook.collections,TranslatingIterator,26,0,0,0,9,0,4,0,4,0
+collections,com.facebook.collections,ByteArray.ByteArrayView,98,0,2,0,18,0,10,0,9,0
+collections,com.facebook.collections,ByteArray,94,15,20,0,26,4,14,3,4,3
+collections,com.facebook.collections,ComparablePair,23,0,2,0,6,0,3,0,2,0
+collections,com.facebook.collections,LongArray,36,269,8,20,6,49,8,19,1,12
+collections,com.facebook.collections,ListMapper,25,0,2,0,6,0,3,0,2,0
+collections,com.facebook.collections,Key,14,72,5,5,6,19,7,6,2,6
+collections,com.facebook.collections,ConcurrentSetFactory,0,8,0,0,0,2,0,2,0,2
+collections,com.facebook.collections,HostPort,126,0,20,0,26,0,17,0,7,0
+collections,com.facebook.collections,RangeSet.LongSegment.new Iterator() {...},9,37,1,3,2,7,2,4,1,3
+collections,com.facebook.collections,RangeSet.new Iterator() {...},5,68,1,11,1,10,2,8,1,3
+collections,com.facebook.collections.specialized,ColtHashSet,62,0,0,0,14,0,8,0,8,0
+collections,com.facebook.collections.specialized,TrackableSetMap.new WrappedIterator() {...},15,0,0,0,4,0,2,0,2,0
+collections,com.facebook.collections.specialized,ColtIntegerHashSet,64,0,0,0,16,0,8,0,8,0
+collections,com.facebook.collections.specialized,AbstractLongTupleList.Iter,41,99,2,10,4,21,3,7,1,3
+collections,com.facebook.collections.specialized,LongTupleHeapFactory,38,0,4,0,8,0,4,0,2,0
+collections,com.facebook.collections.specialized,ColtLongHashSet.Iter,18,124,2,6,4,23,2,6,0,4
+collections,com.facebook.collections.specialized,SampledSetImpl.new WrappedIterator() {...},15,0,0,0,4,0,2,0,2,0
+collections,com.facebook.collections.specialized,LongTupleSerializer,30,0,2,0,7,0,3,0,2,0
+collections,com.facebook.collections.specialized,SampledSetImpl,296,464,45,45,50,106,41,37,14,19
+collections,com.facebook.collections.specialized,SnapshotableSetImpl,36,0,0,0,10,0,3,0,3,0
+collections,com.facebook.collections.specialized,TrackableSetMap,57,29,5,1,14,8,8,3,5,3
+collections,com.facebook.collections.specialized,LongPairList,14,7,0,0,3,3,2,2,2,2
+collections,com.facebook.collections.specialized,IntegerHashSetFactory,12,29,0,0,2,9,2,4,2,4
+collections,com.facebook.collections.specialized,HashSetFactory,5,3,0,0,1,1,1,1,1,1
+collections,com.facebook.collections.specialized,ColtIntegerHashSet.Iter,143,0,8,0,27,0,8,0,4,0
+collections,com.facebook.collections.specialized,ColtHashSet.Iter,142,0,8,0,27,0,8,0,4,0
+collections,com.facebook.collections.specialized,SampledSetSnapshot,3,18,0,0,1,7,1,3,1,3
+collections,com.facebook.collections.specialized,LongTripleList,21,0,0,0,6,0,4,0,4,0
+collections,com.facebook.collections.specialized,ColtLongHashSet,24,40,0,0,7,9,3,5,3,5
+collections,com.facebook.collections.specialized,NumberType,38,0,0,0,3,0,4,0,4,0
+collections,com.facebook.collections.specialized,MutableByteArrayOutputStream,15,0,0,0,5,0,3,0,3,0
+collections,com.facebook.collections.specialized,ColtHashSetFactory,69,0,4,0,13,0,5,0,3,0
+collections,com.facebook.collections.specialized,SnapshotableSetImplFactory,8,6,0,0,1,3,1,1,1,1
+collections,com.facebook.collections.specialized,SampledSetImpl.SerDeImpl,101,0,4,0,27,0,5,0,3,0
+collections,com.facebook.collections.specialized,SynchronizedSetFactory,11,0,0,0,4,0,2,0,2,0
+collections,com.facebook.collections.specialized,IntegerHashSet.new Iterator() {...},5,40,0,0,0,9,0,4,0,4
+collections,com.facebook.collections.specialized,LongHashSet.new Mapper() {...},0,13,0,0,0,2,0,2,0,2
+collections,com.facebook.collections.specialized,LongHashSet,589,331,62,28,119,70,53,22,16,14
+collections,com.facebook.collections.specialized,LongHashSet.new Iterator() {...},49,163,6,10,6,28,6,6,0,4
+collections,com.facebook.collections.specialized,IntegerHashSet,193,347,37,19,27,64,26,24,5,17
+collections,com.facebook.collections.specialized,AbstractLongTupleList,282,431,27,37,50,85,27,32,6,21
+collections,com.facebook.collections.specialized,LongHashSetFactory,12,26,0,0,2,7,2,3,2,3

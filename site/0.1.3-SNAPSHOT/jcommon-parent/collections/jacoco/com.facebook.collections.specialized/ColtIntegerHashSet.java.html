@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ColtIntegerHashSet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections.specialized</a> &gt; <span class="el_source">ColtIntegerHashSet.java</span></div><h1>ColtIntegerHashSet.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections.specialized;
+
+import cern.colt.list.IntArrayList;
+import cern.colt.list.LongArrayList;
+import cern.colt.map.OpenIntDoubleHashMap;
+import cern.colt.map.OpenIntObjectHashMap;
+import cern.colt.map.OpenLongObjectHashMap;
+
+import java.util.AbstractSet;
+import java.util.ConcurrentModificationException;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+/**
+ * uses
+ * &lt;p/&gt;
+ * http://acs.lbl.gov/software/colt/
+ * &lt;p/&gt;
+ * to implement a memory efficient hash set of longs
+ */
+public class ColtIntegerHashSet extends AbstractSet&lt;Long&gt; implements SnapshotableSet&lt;Long&gt; {
+<span class="nc" id="L37">  private static final Object TRUE = new Object();</span>
+
+  private final OpenIntObjectHashMap map;
+
+<span class="nc" id="L41">  private volatile long version = Long.MIN_VALUE;</span>
+
+<span class="nc" id="L43">  ColtIntegerHashSet(OpenIntObjectHashMap map) {</span>
+<span class="nc" id="L44">    this.map = map;</span>
+<span class="nc" id="L45">  }</span>
+
+<span class="nc" id="L47">  public ColtIntegerHashSet(int initialCapacity) {</span>
+<span class="nc" id="L48">    this.map = new OpenIntObjectHashMap(initialCapacity);</span>
+<span class="nc" id="L49">  }</span>
+
+  @Override
+  public synchronized boolean add(Long aLong) {
+<span class="nc" id="L53">    version++;</span>
+
+<span class="nc" id="L55">    return map.put(aLong.intValue(), TRUE);</span>
+  }
+
+  @Override
+  public Iterator&lt;Long&gt; iterator() {
+<span class="nc" id="L60">    return new Iter();</span>
+  }
+
+  @Override
+  public synchronized int size() {
+<span class="nc" id="L65">    return map.size();</span>
+  }
+
+<span class="nc" id="L68">  private class Iter implements Iterator&lt;Long&gt; {</span>
+<span class="nc" id="L69">    private final IntArrayList mapKeyList = map.keys();</span>
+
+<span class="nc" id="L71">    private int index = 0;</span>
+<span class="nc" id="L72">    private long versionSnapshot = version;</span>
+<span class="nc" id="L73">    private boolean canRemove = false;</span>
+
+    @Override
+    public boolean hasNext() {
+<span class="nc" id="L77">      synchronized (ColtIntegerHashSet.this) {</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        return index &lt; mapKeyList.size();</span>
+<span class="nc" id="L79">      }</span>
+    }
+
+    @Override
+    public Long next() {
+<span class="nc" id="L84">      synchronized (ColtIntegerHashSet.this) {</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">        if (versionSnapshot != version) {</span>
+<span class="nc" id="L86">          throw new ConcurrentModificationException();</span>
+        }
+
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (index &gt;= mapKeyList.size()) {</span>
+<span class="nc" id="L90">          throw new NoSuchElementException();</span>
+        }
+
+<span class="nc" id="L93">        long value = mapKeyList.getQuick(index);</span>
+
+<span class="nc" id="L95">        index++;</span>
+<span class="nc" id="L96">        canRemove = true;</span>
+
+<span class="nc" id="L98">        return value;</span>
+<span class="nc" id="L99">      }</span>
+    }
+
+    @Override
+    public void remove() {
+<span class="nc" id="L104">      synchronized (ColtIntegerHashSet.this) {</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        if (!canRemove) {</span>
+<span class="nc" id="L106">          throw new IllegalStateException(</span>
+            &quot;repeated remove() calls or next() not called&quot;
+          );
+        }
+
+<span class="nc" id="L111">        map.removeKey(mapKeyList.get(index - 1));</span>
+<span class="nc" id="L112">        canRemove = false;</span>
+<span class="nc" id="L113">        version++;</span>
+<span class="nc" id="L114">        versionSnapshot = version;</span>
+<span class="nc" id="L115">      }</span>
+<span class="nc" id="L116">    }</span>
+  }
+
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeSnapshot() {
+<span class="nc" id="L121">    OpenIntObjectHashMap mapCopy = (OpenIntObjectHashMap) map.clone();</span>
+<span class="nc" id="L122">    ColtIntegerHashSet thisCopy = new ColtIntegerHashSet(mapCopy);</span>
+
+<span class="nc" id="L124">    return thisCopy;</span>
+  }
+
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeTransientSnapshot() {
+<span class="nc" id="L129">    return makeSnapshot();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

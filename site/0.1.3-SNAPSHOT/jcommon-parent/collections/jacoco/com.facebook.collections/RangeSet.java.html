@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RangeSet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">RangeSet.java</span></div><h1>RangeSet.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import java.util.AbstractSet;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.TreeMap;
+
+/**
+ * Set of Longs that is memory optimized for data sets containing mostly contiguous blocks of longs.
+ * This collection is NOT thread-safe.
+ */
+<span class="fc" id="L31">public class RangeSet extends AbstractSet&lt;Long&gt; implements Set&lt;Long&gt; {</span>
+  /**
+   * Map that indexes each LongSegment with the smallest value in its range
+   */
+<span class="fc" id="L35">  private final NavigableMap&lt;Long, LongSegment&gt; map = new TreeMap&lt;Long, LongSegment&gt;();</span>
+<span class="fc" id="L36">  private int size = 0;</span>
+
+  @Override
+  public int size() {
+<span class="fc" id="L40">    return size;</span>
+  }
+
+  @Override
+  public boolean contains(Object o) {
+<span class="fc" id="L45">    Long value = ((Number) o).longValue();</span>
+<span class="fc" id="L46">    Map.Entry&lt;Long, LongSegment&gt; entry = map.floorEntry(value);</span>
+<span class="fc bfc" id="L47" title="All 4 branches covered.">    return entry != null &amp;&amp; entry.getValue().contains(value);</span>
+  }
+
+  /**
+   * Iterator returns the longs in increasing order
+   *
+   * @return iterator
+   */
+  @Override
+  public Iterator&lt;Long&gt; iterator() {
+<span class="fc" id="L57">    return new Iterator&lt;Long&gt;() {</span>
+      // Get Segments in ascending order
+<span class="fc" id="L59">      private final Iterator&lt;LongSegment&gt; segmentIterator = map.values().iterator();</span>
+<span class="fc bfc" id="L60" title="All 2 branches covered.">      private Iterator&lt;Long&gt; longIterator =</span>
+        segmentIterator.hasNext() ? segmentIterator.next().iterator() : null;
+
+      @Override
+      public boolean hasNext() {
+<span class="pc bpc" id="L65" title="1 of 4 branches missed.">        return longIterator != null &amp;&amp; longIterator.hasNext();</span>
+      }
+
+      @Override
+      public Long next() {
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (!hasNext()) {</span>
+<span class="fc" id="L71">          throw new NoSuchElementException();</span>
+        }
+<span class="fc" id="L73">        Long ret = longIterator.next();</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (!longIterator.hasNext()) {</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">          longIterator = segmentIterator.hasNext() ? segmentIterator.next().iterator() : null;</span>
+        }
+<span class="fc" id="L77">        return ret;</span>
+      }
+
+      @Override
+      public void remove() {
+<span class="nc" id="L82">        throw new UnsupportedOperationException(&quot;Iterator does not support remove&quot;);</span>
+      }
+    };
+  }
+
+  @Override
+  public boolean add(Long aLong) {
+    // Find the largest LongSegment with a min value of less than or equal to aLong
+<span class="fc" id="L90">    Map.Entry&lt;Long, LongSegment&gt; lowerEntry = map.floorEntry(aLong);</span>
+
+    // This value is already added
+<span class="fc bfc" id="L93" title="All 4 branches covered.">    if (lowerEntry != null &amp;&amp; lowerEntry.getValue().contains(aLong)) {</span>
+<span class="fc" id="L94">      return false;</span>
+    }
+
+    // Get the LongSegment with a min value directly after aLong
+<span class="fc" id="L98">    LongSegment upperSegment = map.get(aLong + 1);</span>
+
+    // Determine possibly adjacencies with lower and upper bound LongSegments
+<span class="fc bfc" id="L101" title="All 4 branches covered.">    boolean lowerAdjacent = lowerEntry != null &amp;&amp; lowerEntry.getValue().getMax() + 1 == aLong;</span>
+<span class="pc bpc" id="L102" title="1 of 4 branches missed.">    boolean upperAdjacent = upperSegment != null &amp;&amp; upperSegment.getMin() - 1 == aLong;</span>
+
+<span class="fc bfc" id="L104" title="All 4 branches covered.">    if (lowerAdjacent &amp;&amp; upperAdjacent) {</span>
+
+      // Overwrite the lower adjacent to encompass the whole range
+<span class="fc" id="L107">      map.put(</span>
+        lowerEntry.getValue().getMin(),
+        new LongSegment(lowerEntry.getValue().getMin(), upperSegment.getMax())
+      );
+
+      // Remove the upper adjacent b/c now included in the merged LongSegment
+<span class="fc" id="L113">      map.remove(upperSegment.getMin());</span>
+
+<span class="fc bfc" id="L115" title="All 2 branches covered.">    } else if (lowerAdjacent) {</span>
+
+      // Overwrite the lower adjacent max to include aLong
+<span class="fc" id="L118">      map.put(</span>
+        lowerEntry.getValue().getMin(), new LongSegment(lowerEntry.getValue().getMin(), aLong)
+      );
+
+<span class="fc bfc" id="L122" title="All 2 branches covered.">    } else if (upperAdjacent) {</span>
+
+      // Insert new LongSegment starting aLong and encompassing upper adjacent
+<span class="fc" id="L125">      map.put(aLong, new LongSegment(aLong, upperSegment.getMax()));</span>
+      // Remove the upper adjacent b/c now included in new LongSegment
+<span class="fc" id="L127">      map.remove(upperSegment.getMin());</span>
+
+    } else {
+
+      // No adjacents, so just insert singular element
+<span class="fc" id="L132">      map.put(aLong, new LongSegment(aLong));</span>
+
+    }
+
+<span class="fc" id="L136">    size++;</span>
+<span class="fc" id="L137">    return true;</span>
+  }
+
+  @Override
+  public boolean remove(Object o) {
+<span class="fc" id="L142">    Long value = ((Number) o).longValue();</span>
+<span class="fc" id="L143">    Map.Entry&lt;Long, LongSegment&gt; entry = map.floorEntry(value);</span>
+
+    // Entry does not exist
+<span class="fc bfc" id="L146" title="All 2 branches covered.">    if (entry == null) {</span>
+<span class="fc" id="L147">      return false;</span>
+    }
+
+    // Entry does not contain the value
+<span class="fc bfc" id="L151" title="All 2 branches covered.">    if (!entry.getValue().contains(value)) {</span>
+<span class="fc" id="L152">      return false;</span>
+    }
+
+    // Update lower segment if necessary
+<span class="fc bfc" id="L156" title="All 2 branches covered.">    if (entry.getValue().getMin() &lt; value) {</span>
+<span class="fc" id="L157">      map.put(entry.getValue().getMin(), new LongSegment(entry.getValue().getMin(), value - 1));</span>
+    } else {
+<span class="fc" id="L159">      map.remove(entry.getValue().getMin()); // Otherwise, remove existing segment/index</span>
+    }
+
+    // Make an upper segment if necessary
+<span class="fc bfc" id="L163" title="All 2 branches covered.">    if (entry.getValue().getMax() &gt; value) {</span>
+<span class="fc" id="L164">      map.put(value + 1, new LongSegment(value + 1, entry.getValue().getMax()));</span>
+    }
+
+<span class="fc" id="L167">    size--;</span>
+<span class="fc" id="L168">    return true;</span>
+  }
+
+  @Override
+  public boolean removeAll(Collection&lt;?&gt; c) {
+<span class="fc" id="L173">    boolean changed = false;</span>
+<span class="fc bfc" id="L174" title="All 2 branches covered.">    for (Object o : c) {</span>
+<span class="fc" id="L175">      changed |= remove(o);</span>
+<span class="fc" id="L176">    }</span>
+<span class="fc" id="L177">    return changed;</span>
+  }
+
+  @Override
+  public void clear() {
+<span class="fc" id="L182">    map.clear();</span>
+<span class="fc" id="L183">    size = 0;</span>
+<span class="fc" id="L184">  }</span>
+
+  /**
+   * Represents a range of long values from min to max (inclusive)
+   */
+<span class="fc" id="L189">  private static class LongSegment implements Iterable&lt;Long&gt; {</span>
+    private final long min;
+    private final long max;
+
+<span class="fc" id="L193">    private LongSegment(long min, long max) {</span>
+<span class="fc" id="L194">      this.min = min;</span>
+<span class="fc" id="L195">      this.max = max;</span>
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">      if (max &lt; min) {</span>
+<span class="nc" id="L197">        throw new IllegalArgumentException();</span>
+      }
+<span class="fc" id="L199">    }</span>
+
+    private LongSegment(long value) {
+<span class="fc" id="L202">      this(value, value);</span>
+<span class="fc" id="L203">    }</span>
+
+    public long getMin() {
+<span class="fc" id="L206">      return min;</span>
+    }
+
+    public long getMax() {
+<span class="fc" id="L210">      return max;</span>
+    }
+
+    public boolean contains(long value) {
+<span class="pc bpc" id="L214" title="1 of 4 branches missed.">      return value &gt;= min &amp;&amp; value &lt;= max;</span>
+    }
+
+    @Override
+    public Iterator&lt;Long&gt; iterator() {
+<span class="fc" id="L219">      return new Iterator&lt;Long&gt;() {</span>
+<span class="fc" id="L220">        private long currentValue = min;</span>
+
+        @Override
+        public boolean hasNext() {
+<span class="fc bfc" id="L224" title="All 2 branches covered.">          return currentValue &lt;= max;</span>
+        }
+
+        @Override
+        public Long next() {
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">          if (!hasNext()) {</span>
+<span class="nc" id="L230">            throw new NoSuchElementException();</span>
+          }
+<span class="fc" id="L232">          long ret = currentValue;</span>
+<span class="fc" id="L233">          currentValue++;</span>
+<span class="fc" id="L234">          return ret;</span>
+        }
+
+        @Override
+        public void remove() {
+<span class="nc" id="L239">          throw new UnsupportedOperationException(&quot;Iterator does not support remove&quot;);</span>
+        }
+      };
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

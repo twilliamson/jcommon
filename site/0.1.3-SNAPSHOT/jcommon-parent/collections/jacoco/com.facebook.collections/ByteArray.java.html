@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ByteArray.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">ByteArray.java</span></div><h1>ByteArray.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import com.google.common.base.Preconditions;
+
+import java.util.Arrays;
+import java.util.Comparator;
+
+/**
+ * helper class that wraps a byte[] in order to properly get
+ * Arrays.hashcode()/equals() for use in a HashSet; also implements Comparable
+ */
+<span class="fc" id="L27">public abstract class ByteArray implements Comparable&lt;ByteArray&gt; {</span>
+<span class="fc" id="L28">  public static final ByteArrayComparator BYTE_ARRAY_COMPARATOR = new ByteArrayComparator();</span>
+
+  abstract public byte[] getArray();
+
+  abstract public int getLength();
+
+  public abstract byte getAdjusted(int pos);
+
+  public static ByteArray wrap(byte[] array) {
+<span class="fc" id="L37">    return new PureByteArray(array);</span>
+  }
+
+  public static ByteArray wrap(byte[] array, int offset) {
+<span class="nc" id="L41">    return new ByteArrayView(array, offset);</span>
+  }
+
+  public static ByteArray wrap(byte[] array, int offset, int length) {
+<span class="nc bnc" id="L45" title="All 2 branches missed.">    Preconditions.checkArgument(offset + length &lt;= array.length);</span>
+<span class="nc" id="L46">    return new ByteArrayView(array, offset, length);</span>
+  }
+
+  public static boolean equals(ByteArray array1, ByteArray array2) {
+<span class="nc bnc" id="L50" title="All 2 branches missed.">    if (array1 == null) {</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">      if (array2 == null) {</span>
+<span class="nc" id="L52">        return true;</span>
+      } else {
+<span class="nc" id="L54">        return false;</span>
+      }
+    }
+<span class="nc bnc" id="L57" title="All 2 branches missed.">    if (array2 == null) {</span>
+<span class="nc" id="L58">      return false;</span>
+    }
+
+<span class="nc" id="L61">    int array1Length = array2.getLength();</span>
+<span class="nc" id="L62">    int array2Length = array2.getLength();</span>
+
+<span class="nc bnc" id="L64" title="All 2 branches missed.">    if (array1Length != array2Length) {</span>
+<span class="nc" id="L65">      return false;</span>
+    }
+
+<span class="nc" id="L68">    int length = array1Length;</span>
+
+<span class="nc bnc" id="L70" title="All 2 branches missed.">    for (int i = 0; i &lt; length; i++) {</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">      if (array1.getAdjusted(0) &gt; array2.getAdjusted(0)) {</span>
+<span class="nc" id="L72">        return false;</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">      } else if (array1.getAdjusted(0) &lt; array2.getAdjusted(0)) {</span>
+<span class="nc" id="L74">        return false;</span>
+      }
+    }
+
+<span class="nc" id="L78">    return true;</span>
+  }
+
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L83">      return true;</span>
+    }
+<span class="nc bnc" id="L85" title="All 2 branches missed.">    if (!(o instanceof ByteArray)) {</span>
+<span class="nc" id="L86">      return false;</span>
+    }
+
+<span class="nc" id="L89">    final ByteArray that = (ByteArray) o;</span>
+
+<span class="nc" id="L91">    return ByteArray.equals(this, that);</span>
+  }
+
+  private static class PureByteArray extends ByteArray {
+    private final byte[] array;
+
+<span class="fc" id="L97">    private PureByteArray(byte[] array) {</span>
+<span class="fc" id="L98">      this.array = array;</span>
+<span class="fc" id="L99">    }</span>
+
+    @Override
+    public byte[] getArray() {
+<span class="fc" id="L103">      return array;</span>
+    }
+
+
+    @Override
+    public int getLength() {
+<span class="fc" id="L109">      return array.length;</span>
+    }
+
+    @Override
+    public byte getAdjusted(int pos) {
+<span class="fc" id="L114">      return array[pos];</span>
+    }
+
+    @Override
+    public int compareTo(ByteArray o) {
+<span class="fc" id="L119">      return BYTE_ARRAY_COMPARATOR.compare(this, o);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc bnc" id="L124" title="All 2 branches missed.">      return array != null ? Arrays.hashCode(array) : 0;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L129">      return &quot;PureByteArray{&quot; +</span>
+        &quot;array=&quot; + Arrays.toString(array) +
+        '}';
+    }
+  }
+
+  private static class ByteArrayView extends ByteArray {
+    private final byte[] array;
+    private final int offset;
+    private final int length;
+
+
+<span class="nc" id="L141">    private ByteArrayView(byte[] array, int offset, int length) {</span>
+<span class="nc" id="L142">      this.array = array;</span>
+<span class="nc" id="L143">      this.offset = offset;</span>
+<span class="nc" id="L144">      this.length = length;</span>
+<span class="nc" id="L145">    }</span>
+
+    private ByteArrayView(byte[] array, int offset) {
+<span class="nc" id="L148">      this(array, offset, array.length - offset);</span>
+<span class="nc" id="L149">    }</span>
+
+    private ByteArrayView(byte[] array) {
+<span class="nc" id="L152">      this(array, 0, array.length);</span>
+<span class="nc" id="L153">    }</span>
+
+    @Override
+    public byte[] getArray() {
+<span class="nc" id="L157">      return array;</span>
+    }
+
+    @Override
+    public int getLength() {
+<span class="nc" id="L162">      return length;</span>
+    }
+
+    @Override
+    public byte getAdjusted(int pos) {
+<span class="nc" id="L167">      return array[offset + pos];</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc bnc" id="L172" title="All 2 branches missed.">      int result = array != null ? Arrays.hashCode(array) : 0;</span>
+<span class="nc" id="L173">      result = 31 * result + offset;</span>
+<span class="nc" id="L174">      result = 31 * result + length;</span>
+<span class="nc" id="L175">      return result;</span>
+    }
+
+    @Override
+    public int compareTo(ByteArray o) {
+<span class="nc" id="L180">      return BYTE_ARRAY_COMPARATOR.compare(this, o);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L185">      return &quot;ByteArrayView{&quot; +</span>
+        &quot;array=&quot; + Arrays.toString(array) +
+        &quot;, start=&quot; + offset +
+        &quot;, length=&quot; + length +
+        &quot;} &quot; + toString();
+    }
+  }
+
+<span class="fc" id="L193">  private static class ByteArrayComparator implements Comparator&lt;ByteArray&gt; {</span>
+    @Override
+    public int compare(ByteArray o1, ByteArray o2) {
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">      if (o1 == null) {</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">        if (o2 == null) {</span>
+<span class="nc" id="L198">          return 0;</span>
+        } else {
+<span class="nc" id="L200">          return -1;</span>
+        }
+      }
+
+<span class="fc bfc" id="L204" title="All 2 branches covered.">      if (o2 == null) {</span>
+<span class="fc" id="L205">        return 1;</span>
+      }
+
+<span class="fc bfc" id="L208" title="All 2 branches covered.">      if (o1.getArray() == null) {</span>
+<span class="pc bpc" id="L209" title="1 of 2 branches missed.">        if (o2.getArray() == null) {</span>
+<span class="nc" id="L210">          return 0;</span>
+        } else {
+<span class="fc" id="L212">          return -1;</span>
+        }
+      }
+
+<span class="fc bfc" id="L216" title="All 2 branches covered.">      if (o2.getArray() == null) {</span>
+<span class="fc" id="L217">        return 1;</span>
+      }
+
+<span class="fc" id="L220">      int array1Length = o1.getLength();</span>
+<span class="fc" id="L221">      int array2Length = o2.getLength();</span>
+
+<span class="fc" id="L223">      int length = Math.min(array1Length, array2Length);</span>
+
+<span class="fc bfc" id="L225" title="All 2 branches covered.">      for (int i = 0; i &lt; length; i++) {</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">        if (o1.getAdjusted(0) &lt; o2.getAdjusted(0)) {</span>
+<span class="fc" id="L227">          return -1;</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        } else if (o1.getAdjusted(0) &gt; o2.getAdjusted(0)) {</span>
+<span class="fc" id="L229">          return 1;</span>
+        }
+      }
+
+
+<span class="pc bpc" id="L234" title="1 of 2 branches missed.">      if (array1Length &lt; array2Length) {</span>
+<span class="nc" id="L235">        return -1;</span>
+<span class="pc bpc" id="L236" title="1 of 2 branches missed.">      } else if (array1Length &gt; array2Length) {</span>
+<span class="nc" id="L237">        return 1;</span>
+      } else {
+<span class="fc" id="L239">        return 0;</span>
+      }
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

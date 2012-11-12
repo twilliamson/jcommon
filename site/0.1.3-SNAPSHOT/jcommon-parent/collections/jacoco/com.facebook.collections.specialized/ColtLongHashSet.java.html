@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ColtLongHashSet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections.specialized</a> &gt; <span class="el_source">ColtLongHashSet.java</span></div><h1>ColtLongHashSet.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections.specialized;
+
+import cern.colt.list.LongArrayList;
+import cern.colt.map.OpenLongObjectHashMap;
+
+import java.util.AbstractSet;
+import java.util.ConcurrentModificationException;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+/**
+ * uses
+ * &lt;p/&gt;
+ * http://acs.lbl.gov/software/colt/
+ * &lt;p/&gt;
+ * to implement a memory efficient hash set of longs
+ */
+public class ColtLongHashSet extends AbstractSet&lt;Long&gt; implements SnapshotableSet&lt;Long&gt; {
+<span class="fc" id="L34">  private static final Object TRUE = new Object();</span>
+
+  private final OpenLongObjectHashMap map;
+
+<span class="pc" id="L38">  private volatile long version = Long.MIN_VALUE;</span>
+
+<span class="nc" id="L40">  ColtLongHashSet(OpenLongObjectHashMap map) {</span>
+<span class="nc" id="L41">    this.map = map;</span>
+<span class="nc" id="L42">  }</span>
+
+<span class="fc" id="L44">  public ColtLongHashSet(int initialCapacity) {</span>
+<span class="fc" id="L45">    this.map = new OpenLongObjectHashMap(initialCapacity);</span>
+<span class="fc" id="L46">  }</span>
+
+  @Override
+  public synchronized boolean add(Long aLong) {
+<span class="fc" id="L50">    version++;</span>
+
+<span class="fc" id="L52">    return map.put(aLong.longValue(), TRUE);</span>
+  }
+
+  @Override
+  public Iterator&lt;Long&gt; iterator() {
+<span class="fc" id="L57">    return new Iter();</span>
+  }
+
+  @Override
+  public synchronized int size() {
+<span class="fc" id="L62">    return map.size();</span>
+  }
+
+<span class="fc" id="L65">  private class Iter implements Iterator&lt;Long&gt; {</span>
+<span class="fc" id="L66">    private final LongArrayList mapKeyList = map.keys();</span>
+
+<span class="fc" id="L68">    private int index = 0;</span>
+<span class="fc" id="L69">    private long versionSnapshot = version;</span>
+<span class="fc" id="L70">    private boolean canRemove = false;</span>
+
+    @Override
+    public boolean hasNext() {
+<span class="fc" id="L74">      synchronized (ColtLongHashSet.this) {</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        return index &lt; mapKeyList.size();</span>
+<span class="nc" id="L76">      }</span>
+    }
+
+    @Override
+    public Long next() {
+<span class="fc" id="L81">      synchronized (ColtLongHashSet.this) {</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">        if (versionSnapshot != version) {</span>
+<span class="nc" id="L83">          throw new ConcurrentModificationException();</span>
+        }
+
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">        if (index &gt;= mapKeyList.size()) {</span>
+<span class="nc" id="L87">          throw new NoSuchElementException();</span>
+        }
+
+<span class="fc" id="L90">        long value = mapKeyList.getQuick(index);</span>
+
+<span class="fc" id="L92">        index++;</span>
+<span class="fc" id="L93">        canRemove = true;</span>
+
+<span class="fc" id="L95">        return value;</span>
+<span class="nc" id="L96">      }</span>
+    }
+
+    @Override
+    public void remove() {
+<span class="fc" id="L101">      synchronized (ColtLongHashSet.this) {</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (!canRemove) {</span>
+<span class="fc" id="L103">          throw new IllegalStateException(</span>
+            &quot;repeated remove() calls or next() not called&quot;
+          );
+        }
+
+<span class="fc" id="L108">        map.removeKey(mapKeyList.get(index - 1));</span>
+<span class="fc" id="L109">        canRemove = false;</span>
+<span class="fc" id="L110">        version++;</span>
+<span class="fc" id="L111">        versionSnapshot = version;</span>
+<span class="fc" id="L112">      }</span>
+<span class="fc" id="L113">    }</span>
+  }
+
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeSnapshot() {
+<span class="nc" id="L118">    OpenLongObjectHashMap mapCopy = (OpenLongObjectHashMap) map.clone();</span>
+<span class="nc" id="L119">    ColtLongHashSet thisCopy = new ColtLongHashSet(mapCopy);</span>
+
+<span class="nc" id="L121">    return thisCopy;</span>
+  }
+
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeTransientSnapshot() {
+<span class="nc" id="L126">    return makeSnapshot();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
