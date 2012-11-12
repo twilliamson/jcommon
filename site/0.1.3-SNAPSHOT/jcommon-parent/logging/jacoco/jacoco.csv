@@ -1,0 +1,7 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+jcommon logging,com.facebook.logging,TimeSamplingLog4jLogger,190,0,36,0,43,0,28,0,10,0
+jcommon logging,com.facebook.logging,CustodianDailyRollingFileAppender.StartsWithFileFilter,31,0,4,0,9,0,4,0,2,0
+jcommon logging,com.facebook.logging,RollingCalendar,172,0,9,0,50,0,12,0,5,0
+jcommon logging,com.facebook.logging,CustodianDailyRollingFileAppender,622,0,45,0,134,0,41,0,16,0
+jcommon logging,com.facebook.logging,LoggerImpl,167,39,23,1,48,12,29,4,17,4
+jcommon logging,com.facebook.logging,TimeSamplingLogger,186,0,28,0,52,0,33,0,19,0

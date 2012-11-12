@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeSamplingLogger.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon logging</a> &gt; <a href="index.html" class="el_package">com.facebook.logging</a> &gt; <span class="el_source">TimeSamplingLogger.java</span></div><h1>TimeSamplingLogger.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.logging;
+
+import org.joda.time.DateTimeUtils;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * decorates a FacebookLogger with  the ability to sample logging at a specified window size
+ * (1 per time specified)
+ */
+public class TimeSamplingLogger implements Logger {
+  private final Logger logger;
+  private final long windowSizeMillis;
+<span class="nc" id="L30">  private final AtomicBoolean logToggle = new AtomicBoolean(false);</span>
+
+<span class="nc" id="L32">  private volatile long lastLoggedMillis = 0;</span>
+
+<span class="nc" id="L34">  public TimeSamplingLogger(Logger logger, long time, TimeUnit timeUnit) {</span>
+<span class="nc" id="L35">    this.logger = logger;</span>
+<span class="nc" id="L36">    windowSizeMillis = timeUnit.toMillis(time);</span>
+<span class="nc" id="L37">  }</span>
+
+  private boolean shouldLog() {
+<span class="nc bnc" id="L40" title="All 4 branches missed.">    if (DateTimeUtils.currentTimeMillis() - lastLoggedMillis &gt;= windowSizeMillis</span>
+      &amp;&amp; logToggle.compareAndSet(false, true)
+      ) {
+      try {
+<span class="nc" id="L44">        lastLoggedMillis = DateTimeUtils.currentTimeMillis();</span>
+
+<span class="nc" id="L46">        return true;</span>
+      } finally {
+<span class="nc" id="L48">        logToggle.set(false);</span>
+      }
+    }
+
+<span class="nc" id="L52">    return false;</span>
+  }
+
+  @Override
+  public boolean isDebugEnabled() {
+<span class="nc" id="L57">    return logger.isDebugEnabled();</span>
+  }
+
+  @Override
+  public boolean isInfoEnabled() {
+<span class="nc" id="L62">    return logger.isInfoEnabled();</span>
+  }
+
+  @Override
+  public boolean isWarnEnabled() {
+<span class="nc" id="L67">    return logger.isWarnEnabled();</span>
+  }
+
+  @Override
+  public boolean isErrorEnabled() {
+<span class="nc" id="L72">    return logger.isErrorEnabled();</span>
+  }
+
+  @Override
+  public void debug(String format, Object... args) {
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L78">      logger.debug(format, args);</span>
+    }
+<span class="nc" id="L80">  }</span>
+
+  @Override
+  public void debug(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L84" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L85">      logger.debug(t, format, args);</span>
+    }
+<span class="nc" id="L87">  }</span>
+
+  @Override
+  @Deprecated
+  public void debug(String message, Throwable throwable) {
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L93">      logger.debug(message, throwable);</span>
+    }
+<span class="nc" id="L95">  }</span>
+
+  @Override
+  public void info(String format, Object... args) {
+<span class="nc bnc" id="L99" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L100">      logger.info(format, args);</span>
+    }
+<span class="nc" id="L102">  }</span>
+
+  @Override
+  public void info(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L107">      logger.info(t, format, args);</span>
+    }
+<span class="nc" id="L109">  }</span>
+
+  @Override
+  @Deprecated
+  public void info(String message, Throwable throwable) {
+<span class="nc bnc" id="L114" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L115">      logger.info(message, throwable);</span>
+    }
+<span class="nc" id="L117">  }</span>
+
+  @Override
+  public void warn(String format, Object... args) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L122">      logger.warn(format, args);</span>
+    }
+<span class="nc" id="L124">  }</span>
+
+  @Override
+  public void warn(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L128" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L129">      logger.warn(t, format, args);</span>
+    }
+<span class="nc" id="L131">  }</span>
+
+  @Override
+  @Deprecated
+  public void warn(String message, Throwable throwable) {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L137">      logger.warn(message, throwable);</span>
+    }
+<span class="nc" id="L139">  }</span>
+
+  @Override
+  public void error(String format, Object... args) {
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L144">      logger.error(format, args);</span>
+    }
+<span class="nc" id="L146">  }</span>
+
+  @Override
+  public void error(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L150" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L151">      logger.error(t, format, args);</span>
+    }
+<span class="nc" id="L153">  }</span>
+
+  @Override
+  @Deprecated
+  public void error(String message, Throwable throwable) {
+<span class="nc bnc" id="L158" title="All 2 branches missed.">    if (shouldLog()) {</span>
+<span class="nc" id="L159">      logger.error(message, throwable);</span>
+    }
+<span class="nc" id="L161">  }</span>
+
+  @Override
+  public String getName() {
+<span class="nc" id="L165">    return logger.getName();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
