@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ExpiringConcurrentCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">ExpiringConcurrentCache.java</span></div><h1>ExpiringConcurrentCache.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.collectionsbase.Mapper;
+import com.facebook.collections.TranslatingIterator;
+import com.facebook.util.exceptions.ExceptionHandler;
+import org.apache.log4j.Logger;
+import org.joda.time.DateTimeUtils;
+
+import java.util.AbstractMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class ExpiringConcurrentCache&lt;K, V, E extends Exception&gt;
+  implements ConcurrentCache&lt;K, V, E&gt; {
+<span class="fc" id="L36">  private static final Logger LOG = Logger.getLogger(ExpiringConcurrentCache.class);</span>
+
+  private final ConcurrentCache&lt;K, CacheEntry&lt;V, E&gt;, E&gt; baseCache;
+  private final long maxAgeMillis;
+  private final ExecutorService executor;
+
+  // track the last time a prune operation was performed. Objects 
+  // will only be pruned after maxAgeMillis has passed
+<span class="fc" id="L44">  private final AtomicLong lastPrune = new AtomicLong(</span>
+    DateTimeUtils.currentTimeMillis()
+  );
+<span class="fc" id="L47">  private final AtomicBoolean pruning = new AtomicBoolean(false);</span>
+  // an EvictionListener provides a memory efficient way for clients of this
+  // object to receive information about both the key and value evicted.
+  private final EvictionListener&lt;K, V&gt; evictionListener;
+
+  public ExpiringConcurrentCache(
+    ValueFactory&lt;K, V, E&gt; valueFactory,
+    long maxAge,
+    TimeUnit maxAgeUnit,
+    EvictionListener&lt;K, V&gt; evictionListener,
+    ExceptionHandler&lt;E&gt; exceptionHandler,
+    ExecutorService executor
+<span class="fc" id="L59">  ) {</span>
+<span class="fc" id="L60">    this.evictionListener = evictionListener;</span>
+<span class="fc" id="L61">    this.baseCache =</span>
+      new CoreConcurrentCache&lt;K, CacheEntry&lt;V, E&gt;, E&gt;(
+        new CacheEntryValueFactory(valueFactory),
+        exceptionHandler
+      );
+<span class="fc" id="L66">    this.maxAgeMillis = maxAgeUnit.toMillis(maxAge);</span>
+<span class="fc" id="L67">    this.executor = executor;</span>
+<span class="fc" id="L68">  }</span>
+
+  public ExpiringConcurrentCache(
+    ValueFactory&lt;K, V, E&gt; valueFactory,
+    long maxAge,
+    TimeUnit maxAgeUnit,
+    EvictionListener&lt;K, V&gt; evictionListener,
+    ExceptionHandler&lt;E&gt; exceptionHandler
+  ) {
+<span class="nc" id="L77">    this(</span>
+      valueFactory,
+      maxAge,
+      maxAgeUnit,
+      evictionListener,
+      exceptionHandler,
+      Executors.newSingleThreadExecutor()
+    );
+<span class="nc" id="L85">  }</span>
+
+  /**
+   * compatibility function for use with legacy implementations that use
+   * Reapable to be notified of evictions
+   * 
+   * @param valueFactory
+   * @param maxAge
+   * @param maxAgeUnit
+   * @param exceptionHandler
+   * @param executor
+   * @param &lt;K&gt;
+   * @param &lt;V&gt;
+   * @param &lt;E&gt;
+   * @return
+   */
+  public static &lt;K, V extends Reapable&lt;? extends Exception&gt;, E extends Exception&gt;
+  ExpiringConcurrentCache&lt;K, V, E&gt; createWithReapableValue(
+    ValueFactory&lt;K, V, E&gt; valueFactory,
+    long maxAge,
+    TimeUnit maxAgeUnit,
+    ExceptionHandler&lt;E&gt; exceptionHandler,
+    ExecutorService executor
+  ) {
+<span class="fc" id="L109">    return new ExpiringConcurrentCache&lt;K, V, E&gt;(</span>
+      valueFactory,
+      maxAge,
+      maxAgeUnit,
+<span class="fc" id="L113">      new EvictionListener&lt;K, V&gt;() {</span>
+        @Override
+        public void evicted(K key, V value) {
+          try {
+<span class="fc" id="L117">            value.shutdown();</span>
+<span class="nc" id="L118">          } catch (Throwable t) {</span>
+<span class="nc" id="L119">            LOG.error(&quot;error shutting down reapable&quot;, t);</span>
+<span class="fc" id="L120">          }</span>
+<span class="fc" id="L121">        }</span>
+      },
+      exceptionHandler,
+      executor
+    );
+  }
+
+  @Override
+  public V get(K key) throws E {
+<span class="fc" id="L130">    CacheEntry&lt;V, E&gt; cacheEntry = baseCache.get(key);</span>
+
+<span class="fc" id="L132">    CallableSnapshot&lt;V, E&gt; snapshot = cacheEntry.touch();</span>
+
+    // prune after getting the value
+<span class="fc" id="L135">    pruneIfNeeded();</span>
+
+<span class="fc" id="L137">    return snapshot.get();</span>
+  }
+
+  @Override
+  public V put(K key, V value) throws E {
+<span class="nc" id="L142">    pruneIfNeeded();</span>
+    
+<span class="nc" id="L144">    CacheEntry&lt;V, E&gt; cacheEntry = new CacheEntry&lt;V, E&gt;(value);</span>
+<span class="nc" id="L145">    CacheEntry&lt;V, E&gt; existingCacheEntry = baseCache.put(key, cacheEntry);</span>
+
+<span class="nc bnc" id="L147" title="All 2 branches missed.">    return existingCacheEntry == null ? null : existingCacheEntry.getSnapshot().get();</span>
+  }
+
+  @Override
+  public V remove(K key) throws E {
+<span class="nc" id="L152">    pruneIfNeeded();</span>
+
+<span class="nc" id="L154">    CacheEntry&lt;V, E&gt; cacheEntry = baseCache.remove(key);</span>
+    
+<span class="nc bnc" id="L156" title="All 2 branches missed.">    return cacheEntry == null ? null : cacheEntry.getSnapshot().get();</span>
+  }
+
+  @Override
+  public boolean removeIfError(K key) {
+<span class="nc" id="L161">    return baseCache.removeIfError(key);</span>
+  }
+
+  @Override
+  public void clear() {
+<span class="nc" id="L166">    baseCache.clear();</span>
+<span class="nc" id="L167">  }</span>
+
+  @Override
+  public void prune() throws E {
+<span class="fc" id="L171">    pruneIfNeeded();</span>
+<span class="fc" id="L172">  }</span>
+
+  @Override
+  public int size() {
+<span class="fc" id="L176">    return baseCache.size();</span>
+  }
+
+  /**
+   * non-blocking, thread-safe prune operation that only enters pruning block
+   * after enough time has elapsed
+   *
+   * @throws E
+   */
+  private void pruneIfNeeded() {
+    // only prune if sufficient time has elapsed and another thread isn't
+    // already pruning
+<span class="pc bpc" id="L188" title="1 of 4 branches missed.">    if (DateTimeUtils.currentTimeMillis() - lastPrune.get() &gt;= maxAgeMillis &amp;&amp;</span>
+      pruning.compareAndSet(false, true)) {
+      try {
+<span class="fc" id="L191">        Iterator&lt;Map.Entry&lt;K, CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt;&gt;&gt; iterator =</span>
+          baseCache.iterator();
+
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        while (iterator.hasNext()) {</span>
+          final K key;
+          final CacheEntry&lt;V, E&gt; cacheEntry;
+          try {
+<span class="fc" id="L198">            Map.Entry&lt;K, CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt;&gt; entry =</span>
+              iterator.next();
+<span class="fc" id="L200">            key = entry.getKey();</span>
+<span class="fc" id="L201">            cacheEntry = entry.getValue().get();</span>
+<span class="nc" id="L202">          } catch (Exception e) {</span>
+            // We control the creation process, so should not get an exception
+<span class="nc" id="L204">            throw new RuntimeException(&quot;CacheEntry create should not fail&quot;);</span>
+<span class="fc" id="L205">          }</span>
+
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">          if (cacheEntry.hasExpired(maxAgeMillis)) {</span>
+            // remove the item from the cache
+<span class="fc" id="L209">            iterator.remove();</span>
+
+            // do any shutdown() tasks asynchronously so we don't block access
+            // to the cache
+<span class="fc" id="L213">            executor.execute(</span>
+<span class="fc" id="L214">              new Runnable() {</span>
+                @Override
+                public void run() {
+                  // now reap the entry
+                  try {
+<span class="fc" id="L219">                    V value = cacheEntry.getSnapshot().get();</span>
+
+                    try {
+<span class="fc" id="L222">                      evictionListener.evicted(key, value);</span>
+<span class="nc" id="L223">                    } catch (Throwable t) {</span>
+<span class="nc" id="L224">                      LOG.error(</span>
+                        &quot;Error reaping cache element-- may not be properly closed&quot;,
+                        t
+                      );
+<span class="fc" id="L228">                    }</span>
+<span class="nc" id="L229">                  } catch (Exception e) {</span>
+<span class="nc" id="L230">                    LOG.info(</span>
+                      &quot;Unable to get cache value for key &quot; + key
+                    );
+                    // still notify that key is evicted
+<span class="nc" id="L234">                    evictionListener.evicted(key, null);</span>
+<span class="fc" id="L235">                  }</span>
+<span class="fc" id="L236">                }</span>
+              }
+            );
+
+          }
+<span class="fc" id="L241">        }</span>
+      } finally {
+<span class="pc" id="L243">        lastPrune.set(DateTimeUtils.currentTimeMillis());</span>
+<span class="pc" id="L244">        pruning.set(false);</span>
+<span class="fc" id="L245">      }</span>
+    }
+<span class="fc" id="L247">  }</span>
+
+  @Override
+  public Iterator&lt;Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;&gt; iterator() {
+<span class="nc" id="L251">    return new TranslatingIterator&lt;</span>
+      Map.Entry&lt;K, CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt;&gt;,
+      Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;
+      &gt;(
+      new ValueMapper(), baseCache.iterator()
+    );
+  }
+
+  @Override
+  public CallableSnapshot&lt;V, E&gt; getIfPresent(K key) {
+<span class="fc" id="L261">    pruneIfNeeded();</span>
+<span class="fc" id="L262">    CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt; snapshot =</span>
+      baseCache.getIfPresent(key);
+
+<span class="fc bfc" id="L265" title="All 2 branches covered.">    if (snapshot == null) {</span>
+<span class="fc" id="L266">      return null;</span>
+    } else {
+      try {
+<span class="fc" id="L269">        return snapshot.get().getSnapshot();</span>
+<span class="nc" id="L270">      } catch (Exception e) {</span>
+<span class="nc" id="L271">        throw new RuntimeException(&quot;this shouldn't happen&quot;, e);</span>
+      }
+    }
+  }
+
+<span class="nc" id="L276">  private class ValueMapper implements</span>
+    Mapper&lt;
+      Map.Entry&lt;K, CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt;&gt;,
+      Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;
+      &gt; {
+    @Override
+    public Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt; map(
+      Map.Entry&lt;K, CallableSnapshot&lt;CacheEntry&lt;V, E&gt;, E&gt;&gt; input
+    ) {
+      CallableSnapshot&lt;V, E&gt; snapshot;
+      try {
+<span class="nc" id="L287">        snapshot = input.getValue().get().touch();</span>
+<span class="nc" id="L288">      } catch (Exception e) {</span>
+        // We control the creation process, so we should not get an exception
+<span class="nc" id="L290">        throw new RuntimeException(&quot;CacheEntry create should not fail&quot;);</span>
+<span class="nc" id="L291">      }</span>
+<span class="nc" id="L292">      return new AbstractMap.SimpleImmutableEntry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;(</span>
+        input.getKey(),
+        snapshot
+      );
+    }
+  }
+
+  private class CacheEntryValueFactory
+    implements ValueFactory&lt;K, CacheEntry&lt;V, E&gt;, E&gt; {
+    CallableSnapshotFunction&lt;K, V, E&gt; snapshotFunction;
+
+<span class="fc" id="L303">    private CacheEntryValueFactory(ValueFactory&lt;K, V, E&gt; valueFactory) {</span>
+<span class="fc" id="L304">      snapshotFunction =</span>
+        new PrivateCallableSnapshotFunction&lt;K, V, E&gt;(valueFactory);
+<span class="fc" id="L306">    }</span>
+
+    @Override
+    public CacheEntry&lt;V, E&gt; create(K input) {
+<span class="fc" id="L310">      return new CacheEntry&lt;V, E&gt;(snapshotFunction.apply(input));</span>
+    }
+  }
+
+  /**
+   * a cache entry is a value and it's last accessed time (create, read).
+   * The last accessed is used for expiring entire older than a configured
+   * TTL by the cache
+   *
+   * @param &lt;V&gt; value type
+   * @param &lt;E&gt; exception type
+   */
+  @SuppressWarnings({&quot;unchecked&quot;})
+  private static class CacheEntry&lt;V, E extends Exception&gt; {
+    // mtime guarded by this
+<span class="pc" id="L325">    private long mtime = DateTimeUtils.currentTimeMillis();</span>
+    private volatile Object snapshotOrValue;
+
+<span class="nc" id="L328">    private CacheEntry(V value) {</span>
+<span class="nc" id="L329">      this.snapshotOrValue = value;</span>
+<span class="nc" id="L330">    }</span>
+
+<span class="fc" id="L332">    private CacheEntry(CallableSnapshot&lt;V, E&gt; snapshot) {</span>
+      // if the snapshot indicates no error, store just the value. This
+      // will save us about 24 bytes on a 64-bit box:  2 x 8 byte ptr and
+      // the 8-byte overhead java adds for each object (saved by not
+      // having the CallableSnapshot)
+<span class="pc bpc" id="L337" title="1 of 2 branches missed.">      if (snapshot.getException() == null) {</span>
+        try {
+<span class="fc" id="L339">          snapshotOrValue = snapshot.get();</span>
+<span class="nc" id="L340">        } catch (Exception e) {</span>
+<span class="nc" id="L341">          LOG.error(&quot;this should NEVER be seen&quot;, e);</span>
+<span class="nc" id="L342">          snapshotOrValue = snapshot;</span>
+<span class="pc" id="L343">        }</span>
+      } else {
+<span class="nc" id="L345">        snapshotOrValue = snapshot;</span>
+      }
+<span class="fc" id="L347">    }</span>
+
+    public CallableSnapshot&lt;V, E&gt; getSnapshot() throws E {
+<span class="fc" id="L350">      return getCallableSnapshot();</span>
+    }
+
+    public synchronized CallableSnapshot&lt;V, E&gt; touch() {
+<span class="fc" id="L354">      mtime = DateTimeUtils.currentTimeMillis();</span>
+
+<span class="fc" id="L356">      return getCallableSnapshot();</span>
+    }
+
+    public synchronized boolean hasExpired(long maxAgeMillis) {
+<span class="pc bpc" id="L360" title="1 of 2 branches missed.">      return DateTimeUtils.currentTimeMillis() - mtime &gt;= maxAgeMillis;</span>
+    }
+
+    /**
+     * we store either the result of the Callable if there is no 
+     * exception (saves memory). Otherewise, we keep the whole CallableSnapshot
+     *
+     * @return
+     */
+    private CallableSnapshot&lt;V, E&gt; getCallableSnapshot() {
+<span class="pc bpc" id="L370" title="1 of 2 branches missed.">      if (snapshotOrValue instanceof PrivateCallableSnapshot) {</span>
+<span class="nc" id="L371">        return (CallableSnapshot&lt;V, E&gt;) snapshotOrValue;</span>
+      } else {
+        // we can use NullExceptionHandler since we know
+        // this is a value
+<span class="fc" id="L375">        return new PrivateCallableSnapshot&lt;V, E&gt;(</span>
+          new FixedValueCallable&lt;V&gt;((V) snapshotOrValue),
+          new NullExceptionHandler&lt;E&gt;()
+        );
+      }
+    }
+  }
+
+  // this private class is using it's class type as a boolean flag (to save
+  // memory). If the value stored is of this type in the CacheEntry,
+  // then it means we couldn't store the value and need to call 
+  // CallableSnapshot.get(). By making it private, we guarantee that O
+  // cannot be this type
+  private static class PrivateCallableSnapshotFunction
+    &lt;I, O, E extends Exception&gt;
+    implements CallableSnapshotFunction&lt;I, O, E&gt; {
+
+    private final ValueFactory&lt;I, O, E&gt; valueFactory;
+    private final ExceptionHandler&lt;E&gt; exceptionHandler;
+
+    private PrivateCallableSnapshotFunction(
+      ValueFactory&lt;I, O, E&gt; valueFactory, ExceptionHandler&lt;E&gt; exceptionHandler
+<span class="fc" id="L397">    ) {</span>
+<span class="fc" id="L398">      this.valueFactory = valueFactory;</span>
+<span class="fc" id="L399">      this.exceptionHandler = exceptionHandler;</span>
+<span class="fc" id="L400">    }</span>
+
+    private PrivateCallableSnapshotFunction(ValueFactory&lt;I, O, E&gt; valueFactory) {
+      // We can cast exceptions because the value factory declares which type
+      // of exceptions it can throw on creation
+<span class="fc" id="L405">      this(valueFactory, new CastingExceptionHandler&lt;E&gt;());</span>
+<span class="fc" id="L406">    }</span>
+
+    @Override
+    public CallableSnapshot&lt;O, E&gt; apply(final I input) {
+<span class="fc" id="L410">      return new PrivateCallableSnapshot&lt;O, E&gt;(</span>
+<span class="fc" id="L411">        new Callable&lt;O&gt;() {</span>
+          @Override
+          public O call() throws E {
+<span class="fc" id="L414">            return valueFactory.create(input);</span>
+          }
+        },
+        exceptionHandler
+      );
+    }
+
+  }
+
+  private static class PrivateCallableSnapshot&lt;V, E extends Exception&gt;
+    extends CallableSnapshot&lt;V, E&gt; {
+    private PrivateCallableSnapshot(
+      Callable&lt;V&gt; callable,
+      ExceptionHandler&lt;E&gt; exceptionHandler
+    ) {
+<span class="fc" id="L429">      super(callable, exceptionHandler);</span>
+<span class="fc" id="L430">    }</span>
+  }
+
+
+  // protected for unit testing
+  protected long getNow() {
+<span class="nc" id="L436">    return DateTimeUtils.currentTimeMillis();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

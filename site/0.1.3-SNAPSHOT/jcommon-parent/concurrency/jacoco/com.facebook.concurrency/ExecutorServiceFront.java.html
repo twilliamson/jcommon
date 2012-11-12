@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ExecutorServiceFront.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">ExecutorServiceFront.java</span></div><h1>ExecutorServiceFront.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import org.apache.log4j.Logger;
+import org.joda.time.DateTimeUtils;
+
+import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * This class puts its own Queue in front of another ExecutorService.
+ * It uses that service to submit tasks that drain its queue.  It ensures
+ * a max # of drainer threads (default 1)
+ * 
+ * Typical use case : back this by a SynchronousQueue based thread pool, ie
+ * Executors.newCachedThreadPool() 
+ * 
+ * This will allow more than one object to share the thread pool, but have
+ * a maximum # of threads.  When there are no elements in the queue,
+ * no threads are used.
+ * 
+ */
+public class ExecutorServiceFront extends AbstractExecutorService {
+<span class="fc" id="L45">  private final Lock lock = new ReentrantLock();</span>
+  private final BlockingQueue&lt;Runnable&gt; workQueue;
+  private final ExecutorService executor;
+  private final String poolName;
+  private final long maxTimeSliceMillis;
+  private final BlockingQueue&lt;Drainer&gt; drainerList;
+
+<span class="fc" id="L52">  private static final Logger LOG = Logger.getLogger(ExecutorServiceFront.class);</span>
+
+  /**
+   * 
+   * @param workQueue
+   * @param executor
+   * @param maxDrainers
+   * @param maxTimeSlice - the maximum time slice of a drainer can run
+   * @param maxTimeSliceUnit - the unit of the maxTimeSlice argument
+   */
+  public ExecutorServiceFront(
+    BlockingQueue&lt;Runnable&gt; workQueue, 
+    ExecutorService executor,
+    String poolName,
+    int maxDrainers,
+    long maxTimeSlice,
+    TimeUnit maxTimeSliceUnit
+<span class="fc" id="L69">  ) {</span>
+<span class="fc" id="L70">    this.workQueue = workQueue;</span>
+<span class="fc" id="L71">    this.executor = executor;</span>
+<span class="fc" id="L72">    this.poolName = poolName;</span>
+<span class="fc" id="L73">    this.maxTimeSliceMillis = maxTimeSliceUnit.toMillis(maxTimeSlice);</span>
+<span class="fc" id="L74">    drainerList = new ArrayBlockingQueue&lt;Drainer&gt;(maxDrainers);</span>
+    
+<span class="fc bfc" id="L76" title="All 2 branches covered.">    for (int i = 0; i &lt; maxDrainers; i++) {</span>
+<span class="fc" id="L77">      drainerList.add(new Drainer(String.format(&quot;%s-%03d&quot;, poolName, i)));</span>
+    }
+<span class="fc" id="L79">  }</span>
+
+  public ExecutorServiceFront(
+    BlockingQueue&lt;Runnable&gt; workQueue, 
+    ExecutorService executor,
+    int maxDrainers,
+    long maxTimeSlice,
+    TimeUnit maxTimeSliceUnit
+  ) {
+<span class="nc" id="L88">    this(workQueue, executor, &quot;Drainer&quot;, maxDrainers, maxTimeSlice, maxTimeSliceUnit);</span>
+<span class="nc" id="L89">  }</span>
+
+  public ExecutorServiceFront(
+    BlockingQueue&lt;Runnable&gt; workQueue, 
+    ExecutorService executor,
+    String poolName,
+    int maxDrainers
+  ) {
+<span class="fc" id="L97">    this(workQueue, executor, poolName, maxDrainers, Long.MAX_VALUE, TimeUnit.MILLISECONDS);</span>
+<span class="fc" id="L98">  }</span>
+
+  public ExecutorServiceFront(
+    BlockingQueue&lt;Runnable&gt; workQueue, 
+    ExecutorService executor, 
+    int maxDrainers
+  ) {
+<span class="fc" id="L105">    this(workQueue, executor, &quot;Drainer&quot;, maxDrainers, Long.MAX_VALUE, TimeUnit.MILLISECONDS);</span>
+<span class="fc" id="L106">  }</span>
+
+  public ExecutorServiceFront(
+    ExecutorService executor,
+    long maxTimeSlice,
+    TimeUnit maxTimeSliceUnit
+  ) {
+<span class="fc" id="L113">    this(</span>
+      new LinkedBlockingQueue&lt;Runnable&gt;(), 
+      executor, 
+      &quot;Drainer&quot;,
+      1, 
+      maxTimeSlice,
+      maxTimeSliceUnit);
+<span class="fc" id="L120">  }</span>
+  
+  public ExecutorServiceFront(ExecutorService executor) {
+<span class="nc" id="L123">    this(new LinkedBlockingQueue&lt;Runnable&gt;(), executor, 1);</span>
+<span class="nc" id="L124">  }</span>
+
+  @Override
+  public void shutdown() {
+<span class="nc" id="L128">    throw new UnsupportedOperationException();</span>
+  }
+
+  @Override
+  public synchronized List&lt;Runnable&gt; shutdownNow() {
+<span class="nc" id="L133">    throw new UnsupportedOperationException();    </span>
+  }
+
+  @Override
+  public boolean isShutdown() {
+<span class="nc" id="L138">    throw new UnsupportedOperationException();    </span>
+  }
+
+  @Override
+  public boolean isTerminated() {
+<span class="nc" id="L143">    throw new UnsupportedOperationException();    </span>
+  }
+
+  @Override
+  public boolean awaitTermination(long timeout, TimeUnit unit)
+    throws InterruptedException {
+<span class="nc" id="L149">    throw new UnsupportedOperationException();    </span>
+  }
+
+  @Override
+  public void execute(Runnable task) {
+<span class="fc" id="L154">    workQueue.offer(task);</span>
+<span class="fc" id="L155">    lock.lock();</span>
+
+    try {
+<span class="fc bfc" id="L158" title="All 2 branches covered.">      if (!drainerList.isEmpty()) {</span>
+<span class="fc" id="L159">        executor.execute(drainerList.poll());</span>
+      }
+    } finally {
+<span class="pc" id="L162">      lock.unlock();</span>
+<span class="fc" id="L163">    }</span>
+<span class="fc" id="L164">  }</span>
+
+  private class Drainer implements Runnable {
+    private final String threadName;
+
+<span class="fc" id="L169">    private Drainer(String threadName) {</span>
+<span class="fc" id="L170">      this.threadName = threadName;</span>
+<span class="fc" id="L171">    }</span>
+
+    public void run() {
+<span class="fc" id="L174">      Thread t = Thread.currentThread();</span>
+<span class="fc" id="L175">      String oldName = t.getName();</span>
+<span class="fc" id="L176">      t.setName(threadName);</span>
+
+      try {
+<span class="fc" id="L179">        internalRun();</span>
+      } finally {
+<span class="pc" id="L181">        t.setName(oldName);</span>
+<span class="fc" id="L182">      }</span>
+
+<span class="fc" id="L184">    }</span>
+
+    private void internalRun() {
+<span class="fc" id="L187">      long startTime = DateTimeUtils.currentTimeMillis();</span>
+
+<span class="fc bfc" id="L189" title="All 2 branches covered.">      while (DateTimeUtils.currentTimeMillis() - startTime &lt; maxTimeSliceMillis) {</span>
+<span class="fc" id="L190">        Runnable task = null;</span>
+
+<span class="fc" id="L192">        lock.lock();</span>
+        
+        try {
+<span class="fc" id="L195">          task = workQueue.poll();</span>
+
+<span class="fc bfc" id="L197" title="All 2 branches covered.">          if (task == null) {</span>
+<span class="fc" id="L198">            drainerList.add(this);</span>
+
+            return;
+          }
+        } finally {
+<span class="pc" id="L203">          lock.unlock();</span>
+<span class="fc" id="L204">        }</span>
+
+        try {
+<span class="fc" id="L207">          task.run();</span>
+<span class="fc" id="L208">        } catch (RuntimeException e) {</span>
+<span class="fc" id="L209">          LOG.warn(&quot;Ignoring Task Failure&quot;, e);</span>
+<span class="fc" id="L210">        }</span>
+<span class="fc" id="L211">      }</span>
+
+<span class="fc" id="L213">      lock.lock();</span>
+
+      try {
+        // NOTE: if our queue is empty here, subsequent execute() will create new Drainers
+        // if need be. There is an edge case that executor is shutdown and we have no tasks,
+        // which is why we don't re-submit ourselves unless we have work to do (ie we haven't
+        // terminated
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        if (workQueue.isEmpty()) {</span>
+          // if there's no work, this drainer expires
+<span class="fc" id="L222">          drainerList.add(this);</span>
+        } else {
+<span class="fc" id="L224">          executor.execute(this);</span>
+        }
+      } finally {
+<span class="pc" id="L227">        lock.unlock();</span>
+<span class="fc" id="L228">      }</span>
+<span class="fc" id="L229">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

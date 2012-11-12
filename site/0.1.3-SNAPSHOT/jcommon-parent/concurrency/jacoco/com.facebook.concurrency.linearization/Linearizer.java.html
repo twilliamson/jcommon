@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>Linearizer.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency.linearization</a> &gt; <span class="el_source">Linearizer.java</span></div><h1>Linearizer.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency.linearization;
+
+import org.apache.log4j.Logger;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * The idea here is that we want to impose a partial ordering on
+ * a series of tasks. This class allows you to generate &quot;Points&quot; that
+ * have a start() and complete() method.  LinearizationPoints cannot
+ * start() until all previously created Points have called complete().  
+ * A ConcurrentPoint may not start until the last LinearizationPoint has
+ * called complete();
+ * 
+ * The following example guarantees that printing of point3 will happen
+ * after point1 and point2, though the former two can come in any order
+ * 
+ * &lt;pre&gt;
+* {@code
+
+    ExecutorService executor = Executors.newCachedThreadPool();
+    Linearizer linearizer = new Linearizer();
+    final ConcurrentPoint concurrentPoint1 = linearizer.createConurrentPoint();
+    final ConcurrentPoint concurrentPoint2 = linearizer.createConurrentPoint();
+    Runnable task1 = new Runnable() {
+      @Override
+      public void run() {
+        concurrentPoint1.start();
+       
+        try {
+          System.err.println(&quot;point1&quot;);
+        } finally {
+          concurrentPoint1.complete();
+        }
+      }
+    };
+    Runnable task2 = new Runnable() {
+      @Override
+      public void run() {
+         concurrentPoint2.start();
+       
+        try {
+          System.err.println(&quot;point2&quot;);
+        } finally {
+          concurrentPoint2.complete();
+        }
+      }
+    };
+    executor.execute(task1);
+    executor.execute(task2);
+    
+    final LinearizationPoint linearizationPoint = 
+      linearizer.createLinearizationPoint();
+    Runnable task3 = new Runnable() {
+      @Override
+      public void run() {
+        linearizationPoint.start();
+
+        try {
+          System.err.println(&quot;point3&quot;);
+        } finally {
+          linearizationPoint.complete();
+        }
+      }
+    };
+    
+    executor.execute(task3);
+    executor.shutdown();
+  }
+ &lt;/pre&gt;
+ */
+<span class="fc" id="L91">public class Linearizer {</span>
+<span class="fc" id="L92">  private static final Logger LOG = Logger.getLogger(Linearizer.class);</span>
+  private static final long COMPLETE_WAIT_TIME_SECONDS = 300; 
+
+<span class="fc" id="L95">  private final AtomicReference&lt;AtomicInteger&gt; pointCountRef = </span>
+    new AtomicReference&lt;AtomicInteger&gt;(new AtomicInteger(0));
+<span class="fc" id="L97">  private final AtomicReference&lt;LinearizationPoint&gt; lastLinearizationPointRef = </span>
+    new AtomicReference&lt;LinearizationPoint&gt;();
+
+  /**
+   * creates an lock-object such that other objects of this type
+   * may interleave their start/complete calls. 
+   * 
+   * calling start() on the resulting ConcurrentPoint will block until 
+   * the previous LinearizationPoint calls complete()
+   * 
+   * 
+   * @return
+   */
+  public synchronized ConcurrentPoint createConcurrentPoint() {
+<span class="fc" id="L111">    return new ConcurrentPointImpl(</span>
+      pointCountRef.get(), lastLinearizationPointRef.get()
+    );
+  }
+
+  /**
+   * calling start() on the resulting LinearizationPoint will block
+   * until all previously generated Points call complete()
+   * 
+   * @return
+   */
+  public synchronized LinearizationPoint createLinearizationPoint() {
+<span class="fc" id="L123">    AtomicInteger nextPointCount = new AtomicInteger();</span>
+<span class="fc" id="L124">    AtomicInteger previousPointCount = pointCountRef.getAndSet(nextPointCount);</span>
+
+<span class="fc" id="L126">    LinearizationPointImpl linearizationPoint = </span>
+      new LinearizationPointImpl(previousPointCount, nextPointCount);
+    
+    // set this so that subsequently generated ConcurrentPoints can 
+    // call linearizationPoint.waitForCompletion()
+<span class="fc" id="L131">    lastLinearizationPointRef.set(linearizationPoint);</span>
+    
+<span class="fc" id="L133">    return linearizationPoint;</span>
+  }
+
+  private static class ConcurrentPointImpl implements ConcurrentPoint {
+    private final AtomicInteger pointCount;
+    private final LinearizationPoint previousLinearizationPoint;
+<span class="fc" id="L139">    private final AtomicBoolean completed = new AtomicBoolean(false);</span>
+
+    private ConcurrentPointImpl(
+      AtomicInteger pointCount, LinearizationPoint previousLinearizationPoint
+<span class="fc" id="L143">    ) {</span>
+<span class="fc" id="L144">      pointCount.incrementAndGet();</span>
+<span class="fc" id="L145">      this.previousLinearizationPoint = previousLinearizationPoint;</span>
+<span class="fc" id="L146">      this.pointCount = pointCount;</span>
+<span class="fc" id="L147">    }</span>
+
+    @Override
+    public void start() {
+      try {
+        // if there is a previous LinearizationPoint, we cannot 
+        // start until it completesv
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        if (previousLinearizationPoint != null) {</span>
+<span class="fc" id="L155">          previousLinearizationPoint.waitForCompletion();</span>
+        }
+<span class="nc" id="L157">      } catch (InterruptedException e) {</span>
+<span class="nc" id="L158">        throw new RuntimeException(</span>
+          &quot;interrupted waiting for previous LinearizationPoint to complete&quot;
+        );
+<span class="fc" id="L161">      }</span>
+<span class="fc" id="L162">    }</span>
+
+    @Override
+    public void complete() {
+<span class="pc bpc" id="L166" title="1 of 2 branches missed.">      if (completed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L167">        int result = pointCount.decrementAndGet();</span>
+        // if we are the last point in a virtual queue, signal any 
+        // LinearizationPoint that might be waiting on said virtual queue
+<span class="fc bfc" id="L170" title="All 2 branches covered.">        if (result == 0) {</span>
+<span class="fc" id="L171">          synchronized (pointCount) {</span>
+<span class="fc" id="L172">            pointCount.notifyAll();</span>
+<span class="pc" id="L173">          }</span>
+        }
+      }
+<span class="fc" id="L176">    }</span>
+  }
+
+<span class="fc" id="L179">  private static class LinearizationPointImpl implements LinearizationPoint {</span>
+<span class="fc" id="L180">    private final CountDownLatch startSignal = new CountDownLatch(1);</span>
+<span class="fc" id="L181">    private final CountDownLatch completeSignal = new CountDownLatch(1);</span>
+<span class="fc" id="L182">    private final AtomicBoolean completed = new AtomicBoolean(false);</span>
+    private final AtomicInteger previousPointCount;
+    private final AtomicInteger nextPointCount;
+
+    private LinearizationPointImpl(
+      AtomicInteger previousPointCount,
+      AtomicInteger nextPointCount
+<span class="fc" id="L189">    ) {</span>
+      // we have to increment this so that if another LinearizationPoint
+      // is generated after us, it won't start until we complete
+<span class="fc" id="L192">      nextPointCount.incrementAndGet();</span>
+<span class="fc" id="L193">      this.nextPointCount = nextPointCount;</span>
+<span class="fc" id="L194">      this.previousPointCount = previousPointCount;</span>
+<span class="fc" id="L195">    }</span>
+    
+    private void waitUntilPreviousPointsComplete() {
+      try {
+<span class="fc" id="L199">        synchronized (previousPointCount) {</span>
+<span class="fc bfc" id="L200" title="All 2 branches covered.">          while (previousPointCount.get() &gt; 0) {</span>
+<span class="fc" id="L201">            previousPointCount.wait(5000);</span>
+          }
+<span class="pc" id="L203">        }</span>
+<span class="nc" id="L204">      } catch (InterruptedException e) {</span>
+<span class="nc" id="L205">        throw new RuntimeException(</span>
+          &quot;interrupted waiting for ConcurrentPoints&quot;, e)
+          ;
+<span class="fc" id="L208">      }</span>
+<span class="fc" id="L209">    }</span>
+    
+
+    @Override
+    public void start() {
+      // we wait for any points in the previous virtual queue to complete
+      // By transitivity, this means *all* previous points will be complete
+      // by this point
+<span class="fc" id="L217">      waitUntilPreviousPointsComplete();</span>
+<span class="fc" id="L218">      startSignal.countDown();</span>
+<span class="fc" id="L219">    }</span>
+
+    @Override
+    public void complete() {
+<span class="pc bpc" id="L223" title="1 of 2 branches missed.">      if (completed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L224">        int result = nextPointCount.decrementAndGet();</span>
+        // if we are the last point in a virtual queue, signal any 
+        // LinearizationPoint that might be waiting on said virtual queue
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        if (result == 0) {</span>
+<span class="fc" id="L228">          synchronized (nextPointCount) {</span>
+<span class="fc" id="L229">            nextPointCount.notifyAll();</span>
+<span class="pc" id="L230">          }</span>
+        }
+
+<span class="fc" id="L233">        completeSignal.countDown();</span>
+      }
+<span class="fc" id="L235">    }</span>
+
+    @Override
+    public void waitForStart() throws InterruptedException {
+<span class="nc bnc" id="L239" title="All 2 branches missed.">      while (!startSignal.await(COMPLETE_WAIT_TIME_SECONDS, TimeUnit.SECONDS)) {</span>
+<span class="nc" id="L240">        LOG.info(String.format(</span>
+          &quot;waited %d seconds for LinearizationPoint.start, will wait some more&quot;,
+          COMPLETE_WAIT_TIME_SECONDS
+        ));
+      }
+<span class="nc" id="L245">    }</span>
+
+    @Override
+    public boolean waitForStart(long timeout, TimeUnit unit)
+      throws InterruptedException {
+
+<span class="nc" id="L251">      return startSignal.await(timeout, unit);</span>
+    }
+
+    @Override
+    public void waitForCompletion() throws InterruptedException {
+<span class="pc bpc" id="L256" title="1 of 2 branches missed.">      while (!completeSignal.await(COMPLETE_WAIT_TIME_SECONDS, TimeUnit.SECONDS)) {</span>
+<span class="nc" id="L257">        LOG.info(String.format(</span>
+          &quot;waited %d seconds for LinearizationPoint.complete, will wait some more&quot;,
+          COMPLETE_WAIT_TIME_SECONDS
+        ));
+      }
+<span class="fc" id="L262">    }</span>
+
+    @Override
+    public boolean waitForCompletion(long timeout, TimeUnit unit)
+      throws InterruptedException {
+
+<span class="nc" id="L268">      return completeSignal.await(timeout, unit);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

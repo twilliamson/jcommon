@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ParallelRunner.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">ParallelRunner.java</span></div><h1>ParallelRunner.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.util.ExtRunnable;
+import com.facebook.util.exceptions.ExceptionHandler;
+import com.google.common.base.Function;
+import com.google.common.collect.Iterators;
+import org.apache.log4j.Logger;
+
+import java.util.Iterator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * Utility class in order to execute tasks in parallel on top of an executor, but bound the
+ * number of concurrent tasks used in that executor.  Note, if the executor itself has a bound
+ * lower than specified, that bound will of course be used.
+ */
+public class ParallelRunner {
+<span class="nc" id="L37">  private static final Logger LOG = Logger.getLogger(ParallelRunner.class);</span>
+  private static final String DEFAULT_NAME_PREFIX = &quot;ParallelRun-&quot;;
+
+<span class="nc" id="L40">  private final AtomicLong instanceNumber = new AtomicLong(0);</span>
+
+  private final ExecutorService executor;
+  private final String defaultNamePrefix;
+
+  /**
+   * Create an instance on top of an underlying executor
+   * 
+   * @param executor executor to wrap
+   * @param defaultNamePrefix borrowed threads will use this name prefix
+   */
+<span class="nc" id="L51">  public ParallelRunner(ExecutorService executor, String defaultNamePrefix) {</span>
+<span class="nc" id="L52">    this.executor = executor;</span>
+<span class="nc" id="L53">    this.defaultNamePrefix = defaultNamePrefix;</span>
+<span class="nc" id="L54">  }</span>
+
+  /**
+   * use a default naming prefix, ParallelRunner.DEFAULT_NAME_PREFIX
+   * 
+   * @param executor
+   */
+  public ParallelRunner(ExecutorService executor) {
+<span class="nc" id="L62">    this(executor, DEFAULT_NAME_PREFIX);</span>
+<span class="nc" id="L63">  }</span>
+
+  /**
+   * Helper using default name ParallelRunner.DEFAULT_NAME_PREFIX and Iterables of ExtRunnables
+   *
+   * @param tasks
+   * @param numThreads
+   * @param exceptionHandler
+   * @param &lt;E&gt;
+   * @throws E
+   */
+  public &lt;E extends Exception&gt; void parallelRunExt(
+    Iterable&lt;? extends ExtRunnable&lt;E&gt;&gt; tasks,
+    int numThreads,
+    final ExceptionHandler&lt;E&gt; exceptionHandler
+  ) throws E {
+<span class="nc" id="L79">    parallelRunExt(tasks.iterator(), numThreads, exceptionHandler);</span>
+<span class="nc" id="L80">  }</span>
+
+  /**
+   * Helper using default name ParallelRunner.DEFAULT_NAME_PREFIX
+   *
+   * @param tasksIter
+   * @param numThreads
+   * @param exceptionHandler
+   * @param &lt;E&gt;
+   * @throws E
+   */
+  public &lt;E extends Exception&gt; void parallelRunExt(
+    Iterator&lt;? extends ExtRunnable&lt;E&gt;&gt; tasksIter,
+    int numThreads,
+    final ExceptionHandler&lt;E&gt; exceptionHandler
+  ) throws E {
+<span class="nc" id="L96">    parallelRunExt(</span>
+      tasksIter,
+      numThreads,
+      exceptionHandler,
+      defaultNamePrefix + instanceNumber.getAndIncrement()
+    );
+<span class="nc" id="L102">  }</span>
+
+  /**
+   * Helper function for Iterables and ExtRunnables
+   *
+   * @param tasks
+   * @param numThreads
+   * @param exceptionHandler
+   * @param baseName
+   * @param &lt;E&gt;
+   * @throws E
+   */
+  public &lt;E extends Exception&gt; void parallelRunExt(
+    Iterable&lt;? extends ExtRunnable&lt;E&gt;&gt; tasks,
+    int numThreads,
+    final ExceptionHandler&lt;E&gt; exceptionHandler,
+    String baseName
+  ) throws E {
+<span class="nc" id="L120">    parallelRunExt(tasks.iterator(), numThreads, exceptionHandler, baseName);</span>
+<span class="nc" id="L121">  }</span>
+
+  /**
+   * Adapter methods for ExtRunnable&lt;E&gt; to convert to native Runnable format. An ExceptionHandler
+   * will be used to guarantee type E is thrown, and only one, the &quot;first&quot; exception will be
+   * thrown. The system is fail-fast in that once a task execution observes an exception has
+   * occurred, it does not run additional tasks.
+   *
+   * It has the same contract as far as executing tasks as they are extracted from the Iterator
+   *
+   * @param tasksIter
+   * @param numThreads
+   * @param exceptionHandler
+   * @param baseName
+   * @param &lt;E&gt;
+   * @throws E
+   */
+  public &lt;E extends Exception&gt; void parallelRunExt(
+    Iterator&lt;? extends ExtRunnable&lt;E&gt;&gt; tasksIter,
+    int numThreads,
+    final ExceptionHandler&lt;E&gt; exceptionHandler,
+    String baseName
+  ) throws E {
+<span class="nc" id="L144">    final AtomicReference&lt;E&gt; exception = new AtomicReference&lt;E&gt;();</span>
+<span class="nc" id="L145">    Iterator&lt;Runnable&gt; wrappedIterator = Iterators.transform(</span>
+<span class="nc" id="L146">      tasksIter, new Function&lt;ExtRunnable&lt;E&gt;, Runnable&gt;() {</span>
+      @Override
+      public Runnable apply(final ExtRunnable&lt;E&gt; task) {
+<span class="nc" id="L149">        return new Runnable() {</span>
+          @Override
+          public void run() {
+            try {
+              // short-circuit if other tasksIter failed
+<span class="nc bnc" id="L154" title="All 2 branches missed.">              if (exception.get() == null) {</span>
+<span class="nc" id="L155">                task.run();</span>
+              }
+<span class="nc" id="L157">            } catch (Exception e) {</span>
+<span class="nc" id="L158">              exception.compareAndSet(null, exceptionHandler.handle(e));</span>
+<span class="nc" id="L159">            }</span>
+<span class="nc" id="L160">          }</span>
+        };
+      }
+    });
+
+<span class="nc" id="L165">    parallelRun(wrappedIterator, numThreads, baseName);</span>
+
+<span class="nc bnc" id="L167" title="All 2 branches missed.">    if (exception.get() != null) {</span>
+<span class="nc" id="L168">      throw exception.get();</span>
+    }
+<span class="nc" id="L170">  }</span>
+
+  /**
+   * helper method with default name prefix ParallelRunner.DEFAULT_NAME_PREFIX for Iterabless
+   *
+   * @param tasks
+   * @param numThreads
+   */
+  public void parallelRun(Iterable&lt;? extends Runnable&gt; tasks, int numThreads) {
+<span class="nc" id="L179">    parallelRun(tasks.iterator(), numThreads);</span>
+<span class="nc" id="L180">  }</span>
+
+  /**
+   * helper method with default name prefix ParallelRunner.DEFAULT_NAME_PREFIX
+   * @param tasksIter
+   * @param numThreads
+   */
+  public void parallelRun(Iterator&lt;? extends Runnable&gt; tasksIter, int numThreads) {
+<span class="nc" id="L188">    parallelRun(</span>
+      tasksIter,
+      numThreads,
+      defaultNamePrefix + instanceNumber.getAndIncrement()
+    );
+<span class="nc" id="L193">  }</span>
+
+  /**
+   * adapter method for Iterables
+   * 
+   * @param tasks
+   * @param numThreads
+   * @param baseName
+   */
+  public void parallelRun(
+    Iterable&lt;? extends Runnable&gt; tasks, int numThreads, String baseName
+  ) {
+<span class="nc" id="L205">    parallelRun(tasks.iterator(), numThreads, baseName);</span>
+<span class="nc" id="L206">  }</span>
+
+  /**
+   * This is the core method of ParallelRunner , which takes an iterator of tasks. It is ideal as 
+   * often it is desirable to begin execution of tasks before the entire set has been created.  In
+   * this way, task are started immediately as they are pulled off of the iterator than than
+   * draining the iterator and then executing them.
+   *
+   * Clients may use this fact and create Iterators that are more of a &quot;queue&quot; and take advantage
+   * of this fact. Another way to look at this is as this is a consumer of tasks that come from a
+   * producer (iterator). The expectation is that eventually, most use cases will eventually quit
+   * producing tasks, and hence taskIter.hasNext() return false.
+   *
+   * There is nothing in the implementation that requires this, however, and if a client
+   * constructs an unbounded Iterator, this will function correctly.
+   *
+   * @param tasksIter
+   * @param numThreads
+   * @param baseName
+   */
+  public void parallelRun(
+    Iterator&lt;? extends Runnable&gt; tasksIter, int numThreads, String baseName
+  ) {
+    ExecutorService executorForInvocation;
+    
+    // create a virtual executor that bounds the # of threads we can use
+    // for this run
+<span class="nc" id="L233">    executorForInvocation =</span>
+      new UnstoppableExecutorService(
+        new ExecutorServiceFront(
+          new LinkedBlockingQueue&lt;Runnable&gt;(),
+          executor,
+          numThreads
+        )
+      );
+    
+<span class="nc" id="L242">    int totalTasks = 0;</span>
+
+<span class="nc bnc" id="L244" title="All 2 branches missed.">    while (tasksIter.hasNext()) {</span>
+<span class="nc" id="L245">      executorForInvocation.execute(tasksIter.next());</span>
+<span class="nc" id="L246">      totalTasks++;</span>
+    }
+    
+    // now wait for everything to finish
+<span class="nc" id="L250">    executorForInvocation.shutdown();</span>
+    
+    try {
+<span class="nc bnc" id="L253" title="All 2 branches missed.">      while (!executorForInvocation.awaitTermination(10, TimeUnit.SECONDS)) {</span>
+<span class="nc" id="L254">        LOG.info(</span>
+          String.format(
+            &quot;(%d) %s waited 10s for %d tasks, waiting some more&quot;,
+            Thread.currentThread().getId(),
+            baseName,
+            totalTasks
+          )
+        );
+      }
+
+<span class="nc" id="L264">      LOG.info(</span>
+        String.format(
+          &quot;(%d) tasksIter for %s completed&quot;,
+          Thread.currentThread().getId(),
+          baseName
+        )
+      );
+<span class="nc" id="L271">    } catch (InterruptedException e) {</span>
+<span class="nc" id="L272">      Thread.currentThread().interrupt();</span>
+
+<span class="nc" id="L274">      LOG.warn(&quot;interrupted waiting for tasks to complete&quot;, e);</span>
+<span class="nc" id="L275">    }</span>
+<span class="nc" id="L276">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
