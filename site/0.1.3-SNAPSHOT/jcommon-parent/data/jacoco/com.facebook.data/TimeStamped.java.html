@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeStamped.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data</a> &gt; <span class="el_source">TimeStamped.java</span></div><h1>TimeStamped.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data;
+
+import com.facebook.util.serialization.SerDe;
+import com.facebook.util.serialization.SerDeException;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+
+public class TimeStamped&lt;K&gt; {
+
+  private final DateTime dateKey;
+  private final K key;
+
+<span class="nc" id="L32">  public TimeStamped(DateTime dateKey, K key) {</span>
+<span class="nc" id="L33">    this.dateKey = dateKey;</span>
+<span class="nc" id="L34">    this.key = key;</span>
+<span class="nc" id="L35">  }</span>
+
+  public DateTime getDateKey() {
+<span class="nc" id="L38">    return dateKey;</span>
+  }
+
+  public K getKey() {
+<span class="nc" id="L42">    return key;</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L47" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L48">      return true;</span>
+    }
+<span class="nc bnc" id="L50" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L51">      return false;</span>
+    }
+
+<span class="nc" id="L54">    final TimeStamped&lt;K&gt; that = (TimeStamped&lt;K&gt;) o;</span>
+
+<span class="nc bnc" id="L56" title="All 6 branches missed.">    if (dateKey != null ? !dateKey.equals(that.dateKey) : that.dateKey != null) {</span>
+<span class="nc" id="L57">      return false;</span>
+    }
+<span class="nc bnc" id="L59" title="All 6 branches missed.">    if (key != null ? !key.equals(that.key) : that.key != null) {</span>
+<span class="nc" id="L60">      return false;</span>
+    }
+
+<span class="nc" id="L63">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">    int result = dateKey != null ? dateKey.hashCode() : 0;</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    result = 31 * result + (key != null ? key.hashCode() : 0);</span>
+<span class="nc" id="L70">    return result;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L75">    return &quot;TimeStamped{&quot; +</span>
+      &quot;dateKey=&quot; + dateKey +
+      &quot;, key=&quot; + key +
+      '}';
+  }
+
+  public static class SerDeImpl&lt;K&gt;
+    implements SerDe&lt;TimeStamped&lt;K&gt;&gt; {
+    private final SerDe&lt;K&gt; keySerDe;
+
+<span class="nc" id="L85">    public SerDeImpl(SerDe&lt;K&gt; keySerDe) {</span>
+<span class="nc" id="L86">      this.keySerDe = keySerDe;</span>
+<span class="nc" id="L87">    }</span>
+
+    @Override
+    public TimeStamped&lt;K&gt; deserialize(DataInput in) throws SerDeException {
+      try {
+<span class="nc" id="L92">        long dateKeyMillis= in.readLong();</span>
+<span class="nc" id="L93">        DateTime dateKey = new DateTime(dateKeyMillis, DateTimeZone.UTC);</span>
+<span class="nc" id="L94">        K key = keySerDe.deserialize(in);</span>
+        
+<span class="nc" id="L96">        return new TimeStamped&lt;K&gt;(dateKey, key);</span>
+<span class="nc" id="L97">      } catch (IOException e) {</span>
+<span class="nc" id="L98">        throw new SerDeException(e);</span>
+      }
+    }
+    
+    @Override
+    public void serialize(TimeStamped&lt;K&gt; value, DataOutput out)
+      throws SerDeException {
+      try {
+<span class="nc" id="L106">        out.writeLong(value.dateKey.getMillis());</span>
+<span class="nc" id="L107">        keySerDe.serialize(value.key, out);</span>
+<span class="nc" id="L108">      } catch (IOException e) {</span>
+<span class="nc" id="L109">        throw new SerDeException(e);</span>
+<span class="nc" id="L110">      }</span>
+<span class="nc" id="L111">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

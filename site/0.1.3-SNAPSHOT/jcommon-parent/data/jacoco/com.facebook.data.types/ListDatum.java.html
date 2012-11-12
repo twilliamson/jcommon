@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ListDatum.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">ListDatum.java</span></div><h1>ListDatum.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+import com.facebook.collectionsbase.Lists;
+import com.facebook.util.serialization.SerDe;
+import com.facebook.util.serialization.SerDeException;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * represents a list of Datums. Retrieve the list via asRaw();
+ * &lt;p/&gt;
+ * of the list, but this might lead to confusing issues. Ways to get the List\&lt;Datum\&gt;
+ *   &lt;pre&gt;
+ *     // preferred, though more verbose
+ *     void fuu(Datum someDatum) {
+ *       if (someDatum.getType() == DatumType.LIST) {
+ *         ListDatum listDatum = (ListDatum)someDatum;
+ *         List&lt;Datum&gt; datumList = listDatum.asList();
+ *       }
+ *     }
+ *
+ *     // more concise, but asRaw() thus far has a loose contract and is only
+  *     void bar(Datum someDatum) {
+  *       if (someDatum.getType() == DatumType.LIST) {
+  *         List&lt;Datum&gt; datumList = (List&lt;Datum&gt;)someDatum.asRaw();
+  *       }
+  *     }
+ *
+ *
+ *   &lt;/pre&gt;
+ *
+ */
+public class ListDatum implements Datum {
+  private static final int STRING_DATUM_SIZE_ESTIMATE = 8;
+  private static final char DEFAULT_SEPARATOR = '\001';
+
+  private final List&lt;Datum&gt; datumList;
+  private final char separator;
+  private final Datum scalarDatum;
+<span class="fc" id="L60">  private volatile String cachedStringDatum = null;</span>
+<span class="fc" id="L61">  private volatile byte[] cachedBytes = null;</span>
+
+  public ListDatum(
+    List&lt;Datum&gt; datumList, char separator
+<span class="fc" id="L65">  ) {</span>
+<span class="fc" id="L66">    this.datumList = datumList;</span>
+<span class="fc" id="L67">    this.separator = separator;</span>
+
+<span class="pc bpc" id="L69" title="1 of 2 branches missed.">    if (datumList.size() == 1) {</span>
+<span class="nc" id="L70">      scalarDatum = datumList.get(0);</span>
+    } else {
+<span class="fc" id="L72">      scalarDatum = null;</span>
+    }
+<span class="fc" id="L74">  }</span>
+
+  public ListDatum(List&lt;Datum&gt; datumList) {
+<span class="fc" id="L77">    this(datumList, DEFAULT_SEPARATOR);</span>
+<span class="fc" id="L78">  }</span>
+
+  char getSeparator() {
+<span class="nc" id="L81">    return separator;</span>
+  }
+
+  List&lt;Datum&gt; getDatumList() {
+<span class="nc" id="L85">    return datumList;</span>
+  }
+
+  @Override
+  public boolean asBoolean() {
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    return !datumList.isEmpty();</span>
+  }
+
+  @Override
+  public byte asByte() {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L96">      return scalarDatum.asByte();</span>
+    } else {
+<span class="nc" id="L98">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public short asShort() {
+<span class="nc bnc" id="L104" title="All 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L105">      return scalarDatum.asShort();</span>
+    } else {
+<span class="nc" id="L107">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public int asInteger() {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    if (datumList.size() == 1) {</span>
+<span class="nc" id="L114">      return scalarDatum.asInteger();</span>
+    } else {
+<span class="nc" id="L116">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public long asLong() {
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L123">      return scalarDatum.asLong();</span>
+    } else {
+<span class="nc" id="L125">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public float asFloat() {
+<span class="nc bnc" id="L131" title="All 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L132">      return scalarDatum.asFloat();</span>
+    } else {
+<span class="nc" id="L134">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public double asDouble() {
+<span class="nc bnc" id="L140" title="All 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L141">      return scalarDatum.asDouble();</span>
+    } else {
+<span class="nc" id="L143">      throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  @Override
+  public byte[] asBytes() {
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">    if (cachedBytes == null) {</span>
+      try {
+<span class="fc" id="L151">        cachedBytes = asString().getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc" id="L152">      } catch (UnsupportedEncodingException e) {</span>
+        // this shouldn't happen, but it's fatal of it does
+<span class="nc" id="L154">        throw new RuntimeException(e);</span>
+<span class="fc" id="L155">      }</span>
+    }
+
+<span class="fc" id="L158">    return cachedBytes;</span>
+  }
+
+  @Override
+  public String asString() {
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">    if (scalarDatum != null) {</span>
+<span class="nc" id="L164">      cachedStringDatum = scalarDatum.asString();</span>
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">    } else if (cachedStringDatum == null) {</span>
+<span class="fc" id="L166">      StringBuilder sb = new StringBuilder(</span>
+        datumList.size() * STRING_DATUM_SIZE_ESTIMATE
+      );
+
+<span class="fc bfc" id="L170" title="All 2 branches covered.">      for (Datum datum : datumList) {</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        if (sb.length() &gt; 0) {</span>
+<span class="fc" id="L172">          sb.append(separator);</span>
+        }
+<span class="fc" id="L174">        sb.append(datum.asString());</span>
+<span class="fc" id="L175">      }</span>
+
+<span class="fc" id="L177">      cachedStringDatum = sb.toString();</span>
+    }
+
+<span class="fc" id="L180">    return cachedStringDatum;</span>
+  }
+
+  @Override
+  public boolean isNull() {
+    // TODO: is [NulLDatum] == null ?  i say no as does this impl
+<span class="nc" id="L186">    return false;</span>
+  }
+
+  @Override
+  public DatumType getType() {
+<span class="fc" id="L191">    return DatumType.LIST;</span>
+  }
+
+  @Override
+  public Object asRaw() {
+<span class="nc" id="L196">    return datumList;</span>
+  }
+
+  /**
+   * same as asRaw(), but just saves you from having to  do
+   * &lt;pre&gt; {@code
+   *  List&lt;Datum&gt; list = (List&lt;Datum&gt;)((ListDatum)datum).asRaw()
+   *  } &lt;/pre&gt;
+   * becomes
+   * &lt;pre&gt; {@code
+   *  List&lt;Datum&gt; list = ((ListDatum).datum).asList()
+   *  } &lt;/pre&gt;
+   *
+   * @return
+   */
+  public List&lt;Datum&gt; asList() {
+<span class="fc" id="L212">    return datumList;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L217">    return asString();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="fc bfc" id="L222" title="All 2 branches covered.">    if (this == o) {</span>
+<span class="fc" id="L223">      return true;</span>
+    }
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">    if (!(o instanceof ListDatum)) {</span>
+<span class="nc" id="L226">      return false;</span>
+    }
+
+<span class="fc" id="L229">    final ListDatum listDatum = (ListDatum) o;</span>
+
+<span class="pc bpc" id="L231" title="4 of 6 branches missed.">    if (datumList != null ? !datumList.equals(listDatum.datumList) : listDatum.datumList != null) {</span>
+<span class="nc" id="L232">      return false;</span>
+    }
+
+<span class="fc" id="L235">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L240" title="All 2 branches missed.">    int result = datumList != null ? datumList.hashCode() : 0;</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">    result = 31 * result + (scalarDatum != null ? scalarDatum.hashCode() : 0);</span>
+<span class="nc" id="L242">    return result;</span>
+  }
+
+  @Override
+  public int compareTo(Datum o) {
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">    if (o instanceof ListDatum) {</span>
+<span class="fc" id="L248">      ListDatum otherListDatum = (ListDatum) o;</span>
+
+<span class="fc" id="L250">      return Lists.compareLists(datumList, otherListDatum.datumList);</span>
+    } else {
+<span class="nc" id="L252">      throw new IllegalArgumentException(</span>
+        String.format(
+          &quot;ListDatum cannot compare to %s&quot;, o.getClass()
+        )
+      );
+    }
+  }
+
+<span class="fc" id="L260">  public static class SerDeImpl implements SerDe&lt;Datum&gt; {</span>
+    @Override
+    public Datum deserialize(DataInput in) throws SerDeException {
+      try {
+<span class="fc" id="L264">        int numItems = in.readInt();</span>
+<span class="fc" id="L265">        List&lt;Datum&gt; datumList = new ArrayList&lt;Datum&gt;(numItems);</span>
+
+<span class="fc bfc" id="L267" title="All 2 branches covered.">        for (int i = 0; i &lt; numItems; i++) {</span>
+<span class="fc" id="L268">          byte typeAsByte = in.readByte();</span>
+<span class="fc" id="L269">          DatumType datumType = DatumType.fromByte(typeAsByte);</span>
+<span class="fc" id="L270">          Datum datum = datumType.getSerDe().deserialize(in);</span>
+
+<span class="fc" id="L272">          datumList.add(datum);</span>
+        }
+
+<span class="fc" id="L275">        ListDatum listDatum = new ListDatum(datumList);</span>
+
+<span class="fc" id="L277">        return listDatum;</span>
+<span class="nc" id="L278">      } catch (IOException e) {</span>
+<span class="nc" id="L279">        throw new SerDeException(e);</span>
+      }
+    }
+
+    @Override
+    public void serialize(Datum value, DataOutput out)
+      throws SerDeException {
+<span class="pc bpc" id="L286" title="1 of 2 branches missed.">      if (value instanceof ListDatum) {</span>
+        try {
+<span class="fc" id="L288">          ListDatum listDatum = (ListDatum) value;</span>
+
+<span class="fc" id="L290">          out.writeInt(listDatum.datumList.size());</span>
+
+<span class="fc bfc" id="L292" title="All 2 branches covered.">          for (Datum datum : listDatum.datumList) {</span>
+<span class="fc" id="L293">            DatumType datumType = datum.getType();</span>
+<span class="fc" id="L294">            SerDe&lt;Datum&gt; datumSerDe = datumType.getSerDe();</span>
+            // write type
+<span class="fc" id="L296">            out.writeByte(datumType.getTypeAsByte());</span>
+            // now the datm
+<span class="fc" id="L298">            datumSerDe.serialize(datum, out);</span>
+<span class="fc" id="L299">          }</span>
+
+
+<span class="nc" id="L302">        } catch (IOException e) {</span>
+<span class="nc" id="L303">          throw new SerDeException(e);</span>
+<span class="fc" id="L304">        }</span>
+
+      } else {
+<span class="nc" id="L307">        throw new IllegalArgumentException(</span>
+          &quot;ListDatum.SerDeImpl requires ListDatum, not &quot; +
+            value.getClass()
+        );
+      }
+<span class="fc" id="L312">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
