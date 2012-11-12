@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>WrappedDatum.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">WrappedDatum.java</span></div><h1>WrappedDatum.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.google.common.base.Preconditions;
+
+@JsonTypeInfo(
+  use = JsonTypeInfo.Id.NAME,
+  include = JsonTypeInfo.As.PROPERTY,
+  property = &quot;type&quot;
+)
+@JsonSubTypes({
+  @JsonSubTypes.Type(value = NumberCachingDatum.class, name = &quot;numberCachingDatum&quot;)
+})
+public class WrappedDatum implements Datum {
+  private final Datum delegate;
+  private final Class&lt;? extends Datum&gt; aClass;
+
+<span class="fc" id="L34">  public WrappedDatum(Datum delegate) {</span>
+<span class="pc bpc" id="L35" title="1 of 2 branches missed.">    Preconditions.checkArgument(delegate != null, &quot;WrappedDatum requires non-null delegate&quot;);</span>
+<span class="fc" id="L36">    this.delegate = delegate;</span>
+    //noinspection ConstantConditions
+<span class="fc" id="L38">    aClass = delegate.getClass();</span>
+<span class="fc" id="L39">  }</span>
+
+  @Override
+  public boolean asBoolean() {
+<span class="nc" id="L43">    return delegate.asBoolean();</span>
+  }
+
+  @Override
+  public byte asByte() {
+<span class="nc" id="L48">    return delegate.asByte();</span>
+  }
+
+  @Override
+  public short asShort() {
+<span class="nc" id="L53">    return delegate.asShort();</span>
+  }
+
+  @Override
+  public int asInteger() {
+<span class="nc" id="L58">    return delegate.asInteger();</span>
+  }
+
+  @Override
+  public long asLong() {
+<span class="fc" id="L63">    return delegate.asLong();</span>
+  }
+
+  @Override
+  public float asFloat() {
+<span class="nc" id="L68">    return delegate.asFloat();</span>
+  }
+
+  @Override
+  public double asDouble() {
+<span class="fc" id="L73">    return delegate.asDouble();</span>
+  }
+
+  @Override
+  public String asString() {
+<span class="nc" id="L78">    return delegate.asString();</span>
+  }
+
+  @Override
+  public byte[] asBytes() {
+<span class="nc" id="L83">    return delegate.asBytes();</span>
+  }
+
+  @Override
+  public boolean isNull() {
+<span class="nc" id="L88">    return delegate.isNull();</span>
+  }
+
+  @Override
+  public DatumType getType() {
+<span class="fc" id="L93">    return delegate.getType();</span>
+  }
+
+  @Override
+  public Object asRaw() {
+<span class="nc" id="L98">    return delegate.asRaw();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L103" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L104">      return true;</span>
+    }
+    // can either be another Wrapped
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    if (!(o instanceof WrappedDatum)){</span>
+<span class="nc bnc" id="L108" title="All 6 branches missed.">      return o != null &amp;&amp; !(o.getClass().isAssignableFrom(aClass)) &amp;&amp; delegate.equals(o);</span>
+    }
+
+<span class="nc" id="L111">    WrappedDatum that = (WrappedDatum) o;</span>
+
+<span class="nc bnc" id="L113" title="All 6 branches missed.">    return !(delegate != null ? !delegate.equals(that.delegate) : that.delegate != null);</span>
+
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    return delegate != null ? delegate.hashCode() : 0;</span>
+  }
+
+  @Override
+  public int compareTo(Datum o) {
+<span class="nc" id="L124">    return delegate.compareTo(o);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NullDatum.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">NullDatum.java</span></div><h1>NullDatum.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+
+
+import com.facebook.util.serialization.SerDe;
+import com.facebook.util.serialization.SerDeException;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+
+public class NullDatum implements Datum {
+  // convenient instance to use
+<span class="fc" id="L28">  public static final NullDatum INSTANCE = new NullDatum();</span>
+
+<span class="fc" id="L30">  private NullDatum() {</span>
+<span class="fc" id="L31">  }</span>
+
+  @Override
+  public boolean asBoolean() {
+<span class="nc" id="L35">    return false;</span>
+  }
+
+  @Override
+  public byte asByte() {
+<span class="nc" id="L40">    return 0;</span>
+  }
+
+  @Override
+  public short asShort() {
+<span class="nc" id="L45">    return 0;</span>
+  }
+
+  @Override
+  public int asInteger() {
+<span class="nc" id="L50">    return 0;</span>
+  }
+
+  @Override
+  public long asLong() {
+<span class="nc" id="L55">    return 0;</span>
+  }
+
+  @Override
+  public float asFloat() {
+<span class="nc" id="L60">    return 0;</span>
+  }
+
+  @Override
+  public double asDouble() {
+<span class="nc" id="L65">    return 0;</span>
+  }
+
+  @Override
+  public byte[] asBytes() {
+<span class="nc" id="L70">    return null;</span>
+  }
+
+  @Override
+  public String asString() {
+<span class="nc" id="L75">    return &quot;null&quot;;</span>
+  }
+
+  @Override
+  public boolean isNull() {
+<span class="nc" id="L80">    return true;</span>
+  }
+
+  @Override
+  public DatumType getType() {
+<span class="fc" id="L85">    return DatumType.NULL;</span>
+  }
+
+  @Override
+  public Object asRaw() {
+<span class="fc" id="L90">    return null;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L95">    return asString();</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L100">    return 0;</span>
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+<span class="nc bnc" id="L105" title="All 4 branches missed.">    return obj != null &amp;&amp; obj instanceof NullDatum;</span>
+  }
+
+  @Override
+  public int compareTo(Datum o) {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (o instanceof NullDatum) {</span>
+<span class="nc" id="L111">      return 0;</span>
+    } else {
+<span class="nc" id="L113">      return -1;</span>
+    }
+  }
+
+<span class="fc" id="L117">  public static class SerDeImpl implements SerDe&lt;Datum&gt; {</span>
+    @Override
+    public Datum deserialize(DataInput in) throws SerDeException {
+<span class="nc" id="L120">      return NullDatum.INSTANCE;</span>
+    }
+
+    @Override
+    public void serialize(Datum value, DataOutput out) throws SerDeException {
+<span class="nc" id="L125">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FloatDatum.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">FloatDatum.java</span></div><h1>FloatDatum.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+
+import com.facebook.util.serialization.SerDe;
+import com.facebook.util.serialization.SerDeException;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+
+@SuppressWarnings({&quot;NumericCastThatLosesPrecision&quot;})
+public class FloatDatum implements Datum {
+  private final float value;
+
+<span class="fc" id="L30">  public FloatDatum( float value) {</span>
+<span class="fc" id="L31">    this.value = value;</span>
+<span class="fc" id="L32">  }</span>
+
+  @Override
+  public boolean asBoolean() {
+<span class="pc bpc" id="L36" title="1 of 2 branches missed.">    return value != 0;</span>
+  }
+
+  @Override
+  public byte asByte() {
+<span class="fc" id="L41">    return (byte) value;</span>
+  }
+
+  @Override
+  public short asShort() {
+<span class="fc" id="L46">    return (short) value;</span>
+  }
+
+  @Override
+  public int asInteger() {
+<span class="fc" id="L51">    return (int) value;</span>
+  }
+
+  @Override
+  public long asLong() {
+<span class="fc" id="L56">    return (long) value;</span>
+  }
+
+  @Override
+  public float asFloat() {
+<span class="fc" id="L61">    return value;</span>
+  }
+
+  @Override
+  public double asDouble() {
+<span class="nc" id="L66">    return value;</span>
+  }
+
+  @Override
+  public byte[] asBytes() {
+    // TODO:
+<span class="nc" id="L72">    throw new UnsupportedOperationException();</span>
+  }
+
+  @Override
+  public String asString() {
+<span class="nc" id="L77">    return String.valueOf(value);</span>
+  }
+
+  @Override
+  public boolean isNull() {
+<span class="nc" id="L82">    return false;</span>
+  }
+
+  @Override
+  public DatumType getType() {
+<span class="fc" id="L87">    return DatumType.FLOAT;</span>
+  }
+
+  @Override
+  public Object asRaw() {
+<span class="nc" id="L92">    return value;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L97">    return asString();</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L102">    return Float.valueOf(value).hashCode();</span>
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+<span class="pc bpc" id="L107" title="2 of 6 branches missed.">    return obj != null &amp;&amp; obj instanceof Datum &amp;&amp;</span>
+      Float.compare(value, ((Datum) obj).asFloat()) == 0;
+  }
+
+  @Override
+  public int compareTo(Datum o) {
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">    if (o == null) {</span>
+<span class="nc" id="L114">      return 1;</span>
+    }
+
+<span class="fc" id="L117">    return Float.compare(value, o.asFloat());</span>
+  }
+
+<span class="fc" id="L120">  public static class SerDeImpl implements SerDe&lt;Datum&gt; {</span>
+    @Override
+    public Datum deserialize(DataInput in) throws SerDeException {
+      try {
+<span class="fc" id="L124">        return new FloatDatum(in.readFloat());</span>
+<span class="nc" id="L125">      } catch (IOException e) {</span>
+<span class="nc" id="L126">        throw new SerDeException(e);</span>
+      }
+    }
+
+    @Override
+    public void serialize(Datum value, DataOutput out)
+      throws SerDeException {
+      try {
+<span class="fc" id="L134">        out.writeFloat(value.asFloat());</span>
+<span class="nc" id="L135">      } catch (IOException e) {</span>
+<span class="nc" id="L136">        throw new SerDeException(e);</span>
+<span class="fc" id="L137">      }</span>
+<span class="fc" id="L138">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

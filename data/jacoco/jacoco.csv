@@ -1,0 +1,36 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+data,com.facebook.data.types,IntegerDatum,38,57,6,6,10,13,12,11,7,10
+data,com.facebook.data.types,DatumFactory,3,40,0,0,1,8,1,8,1,8
+data,com.facebook.data.types,NullDatum,41,12,6,0,16,5,17,4,14,4
+data,com.facebook.data.types,DoubleDatum,53,38,7,3,12,9,15,7,10,7
+data,com.facebook.data.types,ImmutableListDatumBuilder,52,0,0,0,11,0,6,0,6,0
+data,com.facebook.data.types,LongDatum,25,71,6,6,7,15,9,13,4,12
+data,com.facebook.data.types,FloatDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,MapDatum,82,115,9,9,20,28,19,10,13,7
+data,com.facebook.data.types,NumberCachingDatum.new Object() {...},13,83,0,0,0,1,0,1,0,1
+data,com.facebook.data.types,StringDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,WrappedDatum,96,28,19,1,17,8,22,4,12,4
+data,com.facebook.data.types,BooleanDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,StringDatum,34,92,8,10,9,20,12,14,5,12
+data,com.facebook.data.types,NullDatum.SerDeImpl,3,3,0,0,2,1,2,1,2,1
+data,com.facebook.data.types,ShortDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,LongDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,ListDatum,154,126,28,14,34,35,31,11,13,8
+data,com.facebook.data.types,DatumSerDe,12,31,0,0,4,10,0,3,0,3
+data,com.facebook.data.types,JsonListDatum,9,0,0,0,3,0,2,0,2,0
+data,com.facebook.data.types,BooleanDatum,55,61,13,13,10,11,18,12,9,8
+data,com.facebook.data.types,MapDatum.SerDeImpl,17,78,1,5,5,20,1,5,0,3
+data,com.facebook.data.types,NumberCachingDatum,45,106,11,13,11,32,17,9,7,6
+data,com.facebook.data.types,ByteDatum,53,36,7,3,12,9,15,7,10,7
+data,com.facebook.data.types,DoubleDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,ListDatum.SerDeImpl,25,80,1,5,5,21,1,5,0,3
+data,com.facebook.data.types,ShortDatum,55,36,9,3,13,9,15,7,9,7
+data,com.facebook.data.types,IntegerDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,DatumType,51,297,13,25,9,46,10,18,1,8
+data,com.facebook.data.types,MapDatum.new Comparator() {...},0,21,0,2,0,5,0,3,0,2
+data,com.facebook.data.types,ByteDatum.SerDeImpl,12,15,0,0,4,5,0,3,0,3
+data,com.facebook.data.types,FloatDatum,29,61,4,6,8,13,11,11,7,10
+data,com.facebook.data.types,DatumUtils,128,89,13,9,19,22,12,5,3,3
+data,com.facebook.data,TimeStamped,105,0,22,0,20,0,17,0,6,0
+data,com.facebook.data,TimeStamped.SerDeImpl,51,0,0,0,15,0,3,0,3,0
+data,com.facebook.data.datumdigest,DatumMurmur3Hash,74,0,6,0,21,0,8,0,5,0
