@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper</a> &gt; <span class="el_source">ZkUtil.java</span></div><h1>ZkUtil.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper;
+
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ZkUtil {
+<span class="fc" id="L23">  private static final Charset CHARSET = Charset.forName(&quot;UTF-8&quot;);</span>
+
+  /**
+   * Don't allow construction of this class
+   */
+<span class="nc" id="L28">  private ZkUtil() {</span>
+<span class="nc" id="L29">  }</span>
+
+  /**
+   * Converts String into a byte array using a fixed character set. All
+   * classes making this conversion should use this function to ensure a
+   * consistent data representation in ZooKeeper.
+   * @param str
+   * @return byte array representation of String
+   */
+  public static byte[] stringToBytes(String str) {
+<span class="fc" id="L39">    return str.getBytes(CHARSET);</span>
+  }
+
+  /**
+   * Converts a byte array from ZooKeeper into a String.
+   * @param data
+   * @return String representation of byte array
+   */
+  public static String bytesToString(byte[] data) {
+<span class="pc bpc" id="L48" title="1 of 2 branches missed.">    return data == null ? null : new String(data, CHARSET);</span>
+  }
+
+  /**
+   * Filters the given node list by the given prefixes.
+   * This method is all-inclusive--if any element in the node list starts
+   * with any of the given prefixes, then it is included in the result.
+   *
+   * @param nodes the nodes to filter
+   * @param prefixes the prefixes to include in the result
+   * @return list of every element that starts with one of the prefixes
+   */
+  public static List&lt;String&gt; filterByPrefix(
+    List&lt;String&gt; nodes, String... prefixes
+  ) {
+<span class="fc" id="L63">    List&lt;String&gt; lockChildren = new ArrayList&lt;String&gt;();</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">    for (String child : nodes){</span>
+<span class="pc bpc" id="L65" title="1 of 2 branches missed.">      for (String prefix : prefixes){</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">        if (child.startsWith(prefix)){</span>
+<span class="fc" id="L67">          lockChildren.add(child);</span>
+<span class="fc" id="L68">          break;</span>
+        }
+      }
+<span class="fc" id="L71">    }</span>
+<span class="fc" id="L72">    return lockChildren;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

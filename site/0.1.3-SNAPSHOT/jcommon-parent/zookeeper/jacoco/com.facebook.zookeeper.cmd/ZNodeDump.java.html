@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZNodeDump.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.cmd</a> &gt; <span class="el_source">ZNodeDump.java</span></div><h1>ZNodeDump.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.cmd;
+
+import com.facebook.zookeeper.ZkUtil;
+import com.facebook.zookeeper.path.ZkGenericPath;
+import com.facebook.zookeeper.convenience.ZkQuickConnectionManager;
+import com.facebook.zookeeper.convenience.ZkScript;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Options;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.data.Stat;
+
+import java.util.List;
+
+public class ZNodeDump extends ZkScript {
+  public ZNodeDump(ZkQuickConnectionManager zkQuickConnectionManager) {
+<span class="nc" id="L31">    super(zkQuickConnectionManager);</span>
+<span class="nc" id="L32">  }</span>
+
+  public ZNodeDump() {
+<span class="nc" id="L35">    this(new ZkQuickConnectionManager());</span>
+<span class="nc" id="L36">  }</span>
+
+  public void dump(String pathStr, int depth, boolean detailed)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L40">    ZkGenericPath path = new ZkGenericPath(pathStr);</span>
+<span class="nc" id="L41">    dump(path, depth, detailed);</span>
+<span class="nc" id="L42">  }</span>
+
+  public void dump(ZkGenericPath path, int depth, boolean detailed)
+    throws InterruptedException, KeeperException {
+    try {
+<span class="nc" id="L47">      print(path.toString(), detailed);</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">      if (depth &gt; 0) {</span>
+<span class="nc" id="L49">        List&lt;String&gt; children = getZk().getChildren(path.toString(), null);</span>
+<span class="nc bnc" id="L50" title="All 2 branches missed.">        for (String child : children) {</span>
+<span class="nc" id="L51">          dump(path.appendChild(child), depth-1, detailed);</span>
+<span class="nc" id="L52">        }</span>
+      }
+<span class="nc" id="L54">    } catch (KeeperException.NoNodeException e) {</span>
+      // Ignore those that were deleted
+<span class="nc" id="L56">    }</span>
+<span class="nc" id="L57">  }</span>
+
+  private void print(String zNodePath, boolean detailed)
+    throws InterruptedException, KeeperException {
+<span class="nc bnc" id="L61" title="All 2 branches missed.">    if (detailed) {</span>
+<span class="nc" id="L62">      printDetailed(zNodePath);</span>
+    } else {
+<span class="nc" id="L64">      printSimple(zNodePath);</span>
+    }
+<span class="nc" id="L66">  }</span>
+
+  private void printSimple(String zNodePath) {
+<span class="nc" id="L69">    System.out.println(zNodePath);</span>
+<span class="nc" id="L70">  }</span>
+
+  private void printDetailed(String zNodePath)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L74">    Stat stat = new Stat();</span>
+<span class="nc" id="L75">    byte[] rawData = getZk().getData(zNodePath, null, stat);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    String data =</span>
+      (rawData == null) ? &quot;&lt;NULL&gt;&quot; : &quot;'&quot; + ZkUtil.bytesToString(rawData) + &quot;'&quot;;
+<span class="nc" id="L78">    System.out.print(String.format(&quot;%-40s &quot;, zNodePath));</span>
+<span class="nc" id="L79">    System.out.print(String.format(&quot;Data: %-20s &quot;, data));</span>
+<span class="nc" id="L80">    System.out.print(String.format(&quot;Data Length: %-5d &quot;, stat.getDataLength()));</span>
+<span class="nc" id="L81">    System.out.print(String.format(&quot;NumChildren: %-5d &quot;, stat.getNumChildren()));</span>
+<span class="nc" id="L82">    System.out.print(String.format(&quot;Children Changes: %-20d &quot;, stat.getCversion()));</span>
+<span class="nc" id="L83">    System.out.print(String.format(&quot;Ephemeral Owner: %-20d &quot;, stat.getEphemeralOwner()));</span>
+<span class="nc" id="L84">    System.out.print(String.format(&quot;Version: %-20d &quot;, stat.getVersion()));</span>
+<span class="nc" id="L85">    System.out.print(String.format(&quot;Time Modified: %-20d &quot;, stat.getMtime()));</span>
+<span class="nc" id="L86">    System.out.print(String.format(&quot;Time Created: %-20d&quot;, stat.getCtime()));</span>
+<span class="nc" id="L87">    System.out.print(&quot;\n&quot;);</span>
+<span class="nc" id="L88">  }</span>
+
+  @Override
+  protected String getName() {
+<span class="nc" id="L92">    return ZNodeDump.class.getName();</span>
+  }
+
+  @Override
+  protected Options getSpecificOptions() {
+<span class="nc" id="L97">    Options options = new Options();</span>
+<span class="nc" id="L98">    options.addOption(</span>
+      &quot;z&quot;,
+      &quot;zkpath&quot;,
+      true,
+      &quot;ZooKeeper root path to initiate dump [Required]&quot;
+    );
+<span class="nc" id="L104">    options.addOption(</span>
+      &quot;d&quot;,
+      &quot;depth&quot;,
+      true,
+      &quot;Max descendant depth to traverse [Default: INTEGER_MAX]&quot;
+    );
+<span class="nc" id="L110">    options.addOption(</span>
+      &quot;t&quot;,
+      &quot;detailed&quot;,
+      false,
+      &quot;Use this flag to print the contents of each ZNode [Default: off]&quot;
+    );
+<span class="nc" id="L116">    return options;</span>
+  }
+
+  @Override
+  protected boolean verifySpecificOptions(CommandLine cmd) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (!cmd.hasOption(&quot;zkpath&quot;)) {</span>
+<span class="nc" id="L122">      System.err.println(&quot;Error: You must specify a ZooKeeper path.\n&quot;);</span>
+<span class="nc" id="L123">      return false;</span>
+    }
+<span class="nc bnc" id="L125" title="All 2 branches missed.">    if (cmd.hasOption(&quot;depth&quot;)) {</span>
+      try {
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if (Integer.parseInt(cmd.getOptionValue(&quot;depth&quot;)) &lt; 0) {</span>
+<span class="nc" id="L128">          System.err.println(&quot;Error: depth parameter must be non-negative.\n&quot;);</span>
+<span class="nc" id="L129">          return false;</span>
+        }
+<span class="nc" id="L131">      } catch (NumberFormatException e) {</span>
+<span class="nc" id="L132">        System.err.println(&quot;Error: depth parameter is not an integer.\n&quot;);</span>
+<span class="nc" id="L133">        return false;</span>
+<span class="nc" id="L134">      }</span>
+    }
+<span class="nc" id="L136">    return true;</span>
+  }
+
+  @Override
+  protected void runScript(CommandLine cmd) throws Exception {
+<span class="nc" id="L141">    String zkPath = cmd.getOptionValue(&quot;zkpath&quot;);</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">    int depth =</span>
+      cmd.hasOption(&quot;depth&quot;)
+        ? Integer.parseInt(cmd.getOptionValue(&quot;depth&quot;))
+        : Integer.MAX_VALUE;
+<span class="nc" id="L146">    boolean detailed = cmd.hasOption(&quot;detailed&quot;);</span>
+<span class="nc" id="L147">    dump(zkPath, depth, detailed);</span>
+<span class="nc" id="L148">  }</span>
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L151">    ZkScript script = new ZNodeDump();</span>
+<span class="nc" id="L152">    script.runMain(args);</span>
+<span class="nc" id="L153">    System.out.println(&quot;DONE&quot;);</span>
+<span class="nc" id="L154">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

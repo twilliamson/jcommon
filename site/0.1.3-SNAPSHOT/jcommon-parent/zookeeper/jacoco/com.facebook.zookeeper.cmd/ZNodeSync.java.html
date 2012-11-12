@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZNodeSync.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.cmd</a> &gt; <span class="el_source">ZNodeSync.java</span></div><h1>ZNodeSync.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.cmd;
+
+import com.facebook.util.StreamImporter;
+import com.facebook.zookeeper.convenience.ZkQuickConnectionManager;
+import com.facebook.zookeeper.convenience.ZkScript;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Options;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.List;
+
+public class ZNodeSync extends ZkScript {
+  private final ZNodeBulkLoader loader;
+  private final ZNodePruner pruner;
+
+  public ZNodeSync(ZkQuickConnectionManager zkQuickConnectionManager) {
+<span class="nc" id="L34">    super(zkQuickConnectionManager);</span>
+<span class="nc" id="L35">    loader = new ZNodeBulkLoader(zkQuickConnectionManager);</span>
+<span class="nc" id="L36">    pruner = new ZNodePruner(zkQuickConnectionManager);</span>
+    // Share the provided connection
+<span class="nc" id="L38">  }</span>
+
+  public ZNodeSync() {
+<span class="nc" id="L41">    this(new ZkQuickConnectionManager());</span>
+<span class="nc" id="L42">  }</span>
+
+  public void setVerbose(boolean verbose) {
+<span class="nc" id="L45">    loader.setVerbose(verbose);</span>
+<span class="nc" id="L46">    pruner.setVerbose(verbose);</span>
+<span class="nc" id="L47">  }</span>
+
+  @Override
+  protected String getName() {
+<span class="nc" id="L51">    return ZNodeSync.class.getName();</span>
+  }
+
+  @Override
+  protected Options getSpecificOptions() {
+<span class="nc" id="L56">    Options options = new Options();</span>
+<span class="nc" id="L57">    options.addOption(</span>
+      &quot;z&quot;,
+      &quot;zkpath&quot;,
+      true,
+      &quot;ZooKeeper path to sync (includes all descendants) [Required]&quot;
+    );
+<span class="nc" id="L63">    options.addOption(</span>
+      &quot;k&quot;,
+      &quot;keyword&quot;,
+      true,
+      &quot;Keyword to write into zNodes that will be removed. This may be used &quot; +
+        &quot;to help reduce activity on or underneath this node [Default: freeze]&quot;
+    );
+<span class="nc" id="L70">    options.addOption(</span>
+      &quot;f&quot;,
+      &quot;file-template&quot;,
+      true,
+      &quot;Path to file containing new-line delimited list of ZNodes to sync. &quot; +
+        &quot;The list only applies to persistent ZNodes. If this parameter is &quot; +
+        &quot;not specified, expects the values to be provided via standard input.&quot;
+    );
+<span class="nc" id="L78">    options.addOption(</span>
+      &quot;v&quot;,
+      &quot;verbose&quot;,
+      false,
+      &quot;Print verbose messages [Default: off]&quot;
+    );
+<span class="nc" id="L84">    return options;</span>
+  }
+
+  @Override
+  protected boolean verifySpecificOptions(CommandLine cmd) {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (!cmd.hasOption(&quot;zkpath&quot;)) {</span>
+<span class="nc" id="L90">      System.err.println(&quot;Error: You must specify a ZooKeeper path.\n&quot;);</span>
+<span class="nc" id="L91">      return false;</span>
+    }
+<span class="nc bnc" id="L93" title="All 2 branches missed.">    if (cmd.hasOption(&quot;file-template&quot;)) {</span>
+<span class="nc" id="L94">      File template = new File(cmd.getOptionValue(&quot;file-template&quot;));</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">      if (!template.exists()) {</span>
+<span class="nc" id="L96">        System.err.println(&quot;Error: invalid file-template path.\n&quot;);</span>
+<span class="nc" id="L97">        return false;</span>
+      }
+    }
+<span class="nc" id="L100">    return true;</span>
+  }
+
+  @Override
+  protected void runScript(CommandLine cmd) throws Exception {
+<span class="nc" id="L105">    setVerbose(cmd.hasOption(&quot;verbose&quot;));</span>
+<span class="nc" id="L106">    String root = cmd.getOptionValue(&quot;zkpath&quot;);</span>
+<span class="nc" id="L107">    String keyword = cmd.getOptionValue(&quot;keyword&quot;, ZNodePruner.DEFAULT_KEYWORD);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    InputStream in =</span>
+      (cmd.hasOption(&quot;file-template&quot;))
+        ? new FileInputStream(new File(cmd.getOptionValue(&quot;file-template&quot;)))
+        : System.in;
+    try {
+<span class="nc" id="L113">      List&lt;String&gt; template = StreamImporter.importLines(in);</span>
+      // First run the bulk loader
+<span class="nc" id="L115">      loader.load(template);</span>
+      // Then prune everything else under specified root
+<span class="nc" id="L117">      pruner.prunePersistent(root, keyword, template);</span>
+    } finally {
+<span class="nc" id="L119">      in.close();</span>
+<span class="nc" id="L120">    }</span>
+<span class="nc" id="L121">  }</span>
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L124">    ZkScript script = new ZNodeSync();</span>
+<span class="nc" id="L125">    script.runMain(args);</span>
+<span class="nc" id="L126">    System.out.println(&quot;DONE&quot;);</span>
+<span class="nc" id="L127">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,664 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MockZooKeeperDataStore.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.mock</a> &gt; <span class="el_source">MockZooKeeperDataStore.java</span></div><h1>MockZooKeeperDataStore.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.mock;
+
+
+import com.facebook.collections.RetrieveableSet;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.Watcher.Event.EventType;
+import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.server.DataTree;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+// TODO: what actions trigger version increments?
+<span class="fc" id="L44">public class MockZooKeeperDataStore {</span>
+<span class="fc" id="L45">  private final AtomicLong nextSessionId = new AtomicLong(0);</span>
+<span class="fc" id="L46">  private final ZNode root = ZNode.createRoot();</span>
+<span class="fc" id="L47">  private final Map&lt;String, RetrieveableSet&lt;ContextedWatcher&gt;&gt; creationWatchers =</span>
+    new HashMap&lt;String, RetrieveableSet&lt;ContextedWatcher&gt;&gt;();
+
+  public long getUniqueSessionId() {
+<span class="fc" id="L51">    return nextSessionId.addAndGet(1);</span>
+  }
+
+  public synchronized void signalSessionEvent(long sessionId, WatchedEvent watchedEvent) {
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">    for (RetrieveableSet&lt;ContextedWatcher&gt; pathWatchers : creationWatchers.values()) {</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">      for (ContextedWatcher contextedWatcher : pathWatchers) {</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">        if (contextedWatcher.getSessionId() == sessionId) {</span>
+<span class="nc" id="L58">          contextedWatcher.process(watchedEvent);</span>
+        }
+<span class="nc" id="L60">      }</span>
+<span class="nc" id="L61">    }</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">    for (ZNode zNode : root) {</span>
+<span class="fc" id="L63">      zNode.signalSessionEvent(sessionId, watchedEvent);</span>
+<span class="fc" id="L64">    }</span>
+<span class="fc" id="L65">  }</span>
+
+  public synchronized void clearSession(long sessionId) {
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">    for (RetrieveableSet&lt;ContextedWatcher&gt; pathWatchers : creationWatchers.values()) {</span>
+<span class="nc" id="L69">      Iterator&lt;ContextedWatcher&gt; iter = pathWatchers.iterator();</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">      while (iter.hasNext()) {</span>
+<span class="nc" id="L71">        ContextedWatcher contextedWatcher = iter.next();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">        if (contextedWatcher.getSessionId() == sessionId) {</span>
+<span class="nc" id="L73">          iter.remove();</span>
+        }
+<span class="nc" id="L75">      }</span>
+<span class="nc" id="L76">    }</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">    for (ZNode zNode : root) {</span>
+<span class="fc" id="L78">      zNode.clearSession(sessionId);</span>
+<span class="fc" id="L79">    }</span>
+<span class="fc" id="L80">  }</span>
+
+  public synchronized String create(
+    long sessionId, String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode
+  ) throws KeeperException {
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">    if (isRootPath(path)) {</span>
+<span class="nc" id="L86">      throw new KeeperException.NodeExistsException(path);</span>
+    }
+<span class="fc" id="L88">    String relativePath = stripRootFromPath(path);</span>
+<span class="fc" id="L89">    String relativeChildPath =</span>
+      root.createDescendant(
+        sessionId, relativePath, data, acl, createMode
+      );
+<span class="fc" id="L93">    String absChildPath = addRootToPath(relativeChildPath);</span>
+
+    // Trigger any creation watches that may exist
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">    if (creationWatchers.containsKey(absChildPath)) {</span>
+<span class="nc" id="L97">      WatchedEvent watchedEvent =</span>
+        new WatchedEvent(
+          EventType.NodeCreated,
+          KeeperState.SyncConnected,
+          absChildPath
+        );
+<span class="nc bnc" id="L103" title="All 2 branches missed.">      for (Watcher watcher : creationWatchers.get(absChildPath)) {</span>
+<span class="nc" id="L104">        watcher.process(watchedEvent);</span>
+<span class="nc" id="L105">      }</span>
+<span class="nc" id="L106">      creationWatchers.remove(absChildPath);</span>
+    }
+<span class="fc" id="L108">    return absChildPath;</span>
+  }
+
+  public synchronized void delete(String path, int expectedVersion) throws KeeperException {
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">    if (isRootPath(path)) {</span>
+<span class="nc" id="L113">      throw new KeeperException.BadArgumentsException(path);</span>
+    }
+<span class="fc" id="L115">    String relativePath = stripRootFromPath(path);</span>
+<span class="fc" id="L116">    root.deleteDescendant(relativePath, expectedVersion);</span>
+<span class="fc" id="L117">  }</span>
+
+  public synchronized Stat exists(long sessionId, String path, Watcher watcher)
+    throws KeeperException {
+    try {
+<span class="nc bnc" id="L122" title="All 2 branches missed.">      ZNode node =</span>
+        isRootPath(path) ? root : root.findDescendant(stripRootFromPath(path));
+<span class="nc bnc" id="L124" title="All 2 branches missed.">      if (watcher != null) {</span>
+<span class="nc" id="L125">        node.addWatcher(sessionId, watcher, WatchTriggerPolicy.WatchType.EXISTS);</span>
+      }
+<span class="nc" id="L127">      Stat stat = new Stat();</span>
+<span class="nc" id="L128">      DataTree.copyStat(node.getStat(), stat);</span>
+<span class="nc" id="L129">      return stat;</span>
+<span class="nc" id="L130">    } catch (KeeperException.NoNodeException e) {</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">      if (watcher != null) {</span>
+        // Set a watch for this node when it gets created
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        if (!creationWatchers.containsKey(path)) {</span>
+<span class="nc" id="L134">          creationWatchers.put(path, new RetrieveableSet&lt;ContextedWatcher&gt;());</span>
+        }
+<span class="nc" id="L136">        ContextedWatcher contextedWatcher =</span>
+          new ContextedWatcher(
+            watcher,
+            sessionId,
+            WatchTriggerPolicy.WatchType.EXISTS
+          );
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        if (!creationWatchers.get(path).contains(contextedWatcher)) {</span>
+<span class="nc" id="L143">          creationWatchers.get(path).add(contextedWatcher);</span>
+        }
+      }
+<span class="nc" id="L146">      return null;</span>
+    }
+  }
+
+  public synchronized byte[] getData(long sessionId, String path, Watcher watcher, Stat stat)
+    throws KeeperException {
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">    ZNode node =</span>
+      isRootPath(path) ? root : root.findDescendant(stripRootFromPath(path));
+<span class="fc bfc" id="L154" title="All 2 branches covered.">    if (watcher != null) {</span>
+<span class="fc" id="L155">      node.addWatcher(sessionId, watcher, WatchTriggerPolicy.WatchType.GETDATA);</span>
+    }
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">    if (stat != null) {</span>
+<span class="nc" id="L158">      DataTree.copyStat(node.getStat(), stat);</span>
+    }
+<span class="fc" id="L160">    return node.getData();</span>
+  }
+
+  public synchronized Stat setData(String path, byte[] data, int expectedVersion)
+    throws KeeperException {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">    ZNode node =</span>
+      isRootPath(path) ? root : root.findDescendant(stripRootFromPath(path));
+<span class="nc" id="L167">    node.setData(data, expectedVersion);</span>
+<span class="nc" id="L168">    Stat stat = new Stat();</span>
+<span class="nc" id="L169">    DataTree.copyStat(node.getStat(), stat);</span>
+<span class="nc" id="L170">    return stat;</span>
+  }
+
+  public synchronized List&lt;String&gt; getChildren(long sessionId, String path, Watcher watcher)
+    throws KeeperException {
+<span class="pc bpc" id="L175" title="1 of 2 branches missed.">    ZNode node =</span>
+      isRootPath(path) ? root : root.findDescendant(stripRootFromPath(path));
+<span class="fc bfc" id="L177" title="All 2 branches covered.">    if (watcher != null) {</span>
+<span class="fc" id="L178">      node.addWatcher(sessionId, watcher, WatchTriggerPolicy.WatchType.GETCHILDREN);</span>
+    }
+<span class="fc" id="L180">    return new ArrayList&lt;String&gt;(node.getChildren().keySet());</span>
+  }
+
+  private static boolean isRootPath(String path) {
+<span class="fc" id="L184">    return path.equals(&quot;/&quot;);</span>
+  }
+
+  private static String stripRootFromPath(String path) {
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">    if (!path.startsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L189">      throw new IllegalArgumentException(&quot;Does not have root: &quot; + path);</span>
+    }
+    // Remove the leading slash for the root node
+<span class="fc" id="L192">    return path.substring(1);</span>
+  }
+
+  private static String addRootToPath(String path) {
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">    if (path.startsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L197">      throw new IllegalArgumentException(&quot;Already has root: &quot; + path);</span>
+    }
+    // Add the leading slash for the root node
+<span class="fc" id="L200">    return &quot;/&quot; + path;</span>
+  }
+
+  /**
+   * ZNode: basic node storage unit. Collectively, they form the mock ZooKeeper
+   * data storage tree hierarchy.
+   *
+   * For each ZNode:
+   * - Contains basic tree traversal algorithms stemming from the current ZNode
+   * - Maintains and signals watches set on the node
+   * - Capable of iterating across its entire sub-tree
+   *
+   * Assumptions:
+   * - All paths will be specified relative to the current node. For example,
+   * given the following tree:
+   *                                  A
+   *                                /  \
+   *                              B     C
+   *                            /  \
+   *                          D     E
+   *                        /
+   *                      F
+   *
+   * If the current node is A, the path we specify to reach F will be: &quot;B/D/F&quot;
+   * If the current node is B, the path we specify to reach F will be: &quot;D/F&quot;
+   * Note: paths should never start or end with a '/'
+   */
+<span class="pc bpc" id="L227" title="1 of 2 branches missed.">  private static class ZNode implements Iterable&lt;ZNode&gt; {</span>
+    private final ZNode parent;
+    private final String name;
+    private byte[] data;
+    private List&lt;ACL&gt; acl;
+    private final CreateMode createMode;
+<span class="fc" id="L233">    private final Stat stat = new Stat();</span>
+<span class="fc" id="L234">    private final AtomicLong nextSeqNum = new AtomicLong(0);</span>
+<span class="fc" id="L235">    private final AtomicInteger version = new AtomicInteger(0);</span>
+<span class="fc" id="L236">    private final Map&lt;String, ZNode&gt; children = new HashMap&lt;String, ZNode&gt;();</span>
+<span class="fc" id="L237">    private final RetrieveableSet&lt;ContextedWatcher&gt; contextedWatchers =</span>
+      new RetrieveableSet&lt;ContextedWatcher&gt;();
+
+    private ZNode(
+      long sessionId,
+      ZNode parent,
+      String name,
+      byte[] data,
+      List&lt;ACL&gt; acl,
+      CreateMode createMode
+<span class="fc" id="L247">    ) {</span>
+<span class="fc" id="L248">      this.parent = parent;</span>
+<span class="fc" id="L249">      this.name = name;</span>
+<span class="fc" id="L250">      this.data = data;</span>
+<span class="fc" id="L251">      this.acl = acl;</span>
+<span class="fc" id="L252">      this.createMode = createMode;</span>
+<span class="fc bfc" id="L253" title="All 2 branches covered.">      stat.setEphemeralOwner(createMode.isEphemeral() ? sessionId : 0);</span>
+<span class="fc bfc" id="L254" title="All 2 branches covered.">      stat.setDataLength((data == null) ? 0 : data.length);</span>
+<span class="fc" id="L255">      stat.setNumChildren(0);</span>
+<span class="fc" id="L256">      stat.setVersion(version.get());</span>
+<span class="fc" id="L257">    }</span>
+
+    public static ZNode createRoot() {
+<span class="fc" id="L260">      return new ZNode(0, null, &quot;&quot;, new byte[0], null, CreateMode.PERSISTENT);</span>
+    }
+
+    public void addWatcher(
+      long sessionId, Watcher watcher, WatchTriggerPolicy.WatchType watchType
+    ) {
+<span class="fc" id="L266">      ContextedWatcher contextedWatcher =</span>
+        new ContextedWatcher(watcher, sessionId, watchType);
+<span class="fc bfc" id="L268" title="All 2 branches covered.">      if (contextedWatchers.contains(contextedWatcher)) {</span>
+<span class="fc" id="L269">        contextedWatchers.get(contextedWatcher).merge(contextedWatcher);</span>
+      } else {
+<span class="fc" id="L271">        contextedWatchers.add(contextedWatcher);</span>
+      }
+<span class="fc" id="L273">    }</span>
+
+    public void clearSession(long sessionId) {
+      // First remove all of your own watches
+<span class="fc" id="L277">      Iterator&lt;ContextedWatcher&gt; iter = contextedWatchers.iterator();</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">      while(iter.hasNext()) {</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (iter.next().getSessionId() == sessionId) {</span>
+<span class="fc" id="L280">          iter.remove();</span>
+        }
+      }
+      // Delete self if node is ephemeral
+<span class="fc bfc" id="L284" title="All 2 branches covered.">      if (stat.getEphemeralOwner() == sessionId) {</span>
+        try {
+<span class="fc" id="L286">          delete(-1);</span>
+<span class="nc" id="L287">        } catch (KeeperException e) {</span>
+<span class="nc" id="L288">          throw new RuntimeException(e);</span>
+<span class="fc" id="L289">        }</span>
+      }
+      // This session should not receive any callbacks as a result of clearing
+<span class="fc" id="L292">    }</span>
+
+    public void signalSessionEvent(long sessionId, WatchedEvent watchedEvent) {
+<span class="fc bfc" id="L295" title="All 2 branches covered.">      for (ContextedWatcher contextedWatcher : contextedWatchers) {</span>
+<span class="fc bfc" id="L296" title="All 2 branches covered.">        if (contextedWatcher.getSessionId() == sessionId) {</span>
+<span class="fc" id="L297">          contextedWatcher.process(watchedEvent);</span>
+        }
+<span class="fc" id="L299">      }</span>
+<span class="fc" id="L300">    }</span>
+
+    public void signalNodeEvent(EventType eventType) {
+<span class="pc bpc" id="L303" title="2 of 4 branches missed.">      assert(eventType != EventType.None);</span>
+<span class="fc" id="L304">      WatchedEvent watchedEvent =</span>
+        new WatchedEvent(
+          eventType,
+          KeeperState.SyncConnected,
+          addRootToPath(getPath())
+        );
+<span class="fc" id="L310">      Iterator&lt;ContextedWatcher&gt; iter = contextedWatchers.iterator();</span>
+<span class="fc bfc" id="L311" title="All 2 branches covered.">      while(iter.hasNext()) {</span>
+<span class="fc" id="L312">        ContextedWatcher contextedWatcher = iter.next();</span>
+<span class="pc bpc" id="L313" title="1 of 2 branches missed.">        if (contextedWatcher.shouldTrigger(eventType)) {</span>
+<span class="fc" id="L314">          iter.remove(); // Remove for one use</span>
+<span class="fc" id="L315">          contextedWatcher.process(watchedEvent);</span>
+        }
+<span class="fc" id="L317">      }</span>
+<span class="fc" id="L318">    }</span>
+
+    public ZNode findDescendant(String path) throws KeeperException {
+<span class="fc" id="L321">      List&lt;String&gt; pathParts = Arrays.asList(path.split(&quot;/&quot;));</span>
+<span class="fc" id="L322">      ZNode lastSeenZNode = this;</span>
+<span class="fc bfc" id="L323" title="All 2 branches covered.">      for (String childName : pathParts) {</span>
+<span class="fc" id="L324">        lastSeenZNode = lastSeenZNode.getChildren().get(childName);</span>
+<span class="fc bfc" id="L325" title="All 2 branches covered.">        if (lastSeenZNode == null) {</span>
+<span class="fc" id="L326">          throw new KeeperException.NoNodeException();</span>
+        }
+<span class="fc" id="L328">      }</span>
+<span class="fc" id="L329">      return lastSeenZNode;</span>
+    }
+
+    public ZNode findLeafParent(String path) throws KeeperException {
+<span class="fc bfc" id="L333" title="All 2 branches covered.">      if (!path.contains(&quot;/&quot;)) {</span>
+        // No slashes =&gt; this must be the parent
+<span class="fc" id="L335">        return this;</span>
+      }
+<span class="fc" id="L337">      return findDescendant(getLeafParentPath(path));</span>
+    }
+
+    private static String getLeafParentPath(String path) {
+<span class="fc" id="L341">      int idx = path.lastIndexOf(&quot;/&quot;);</span>
+<span class="pc bpc" id="L342" title="1 of 2 branches missed.">      if (idx == -1) {</span>
+<span class="nc" id="L343">        throw new IllegalArgumentException(&quot;Path does not have parent: &quot; + path);</span>
+      }
+<span class="fc" id="L345">      return path.substring(0, idx);</span>
+    }
+
+    public String getPath() {
+<span class="fc" id="L349">      ZNode currentNode = this;</span>
+<span class="fc" id="L350">      String path = &quot;&quot;;</span>
+<span class="fc bfc" id="L351" title="All 2 branches covered.">      while (!currentNode.isRoot()) {</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">        if (!path.isEmpty()) {</span>
+<span class="fc" id="L353">          path = &quot;/&quot; + path;</span>
+        }
+<span class="fc" id="L355">        path = currentNode.getName() + path;</span>
+<span class="fc" id="L356">        currentNode = currentNode.getParent();</span>
+      }
+<span class="fc" id="L358">      return path;</span>
+    }
+
+    private static String getLeafName(String path) {
+<span class="fc" id="L362">      int idx = path.lastIndexOf(&quot;/&quot;);</span>
+<span class="fc bfc" id="L363" title="All 2 branches covered.">      if (idx == -1) {</span>
+<span class="fc" id="L364">        return path;</span>
+      }
+<span class="fc" id="L366">      return path.substring(idx+1);</span>
+    }
+
+    public String createDescendant(
+      long sessionId,
+      String path,
+      byte[] data,
+      List&lt;ACL&gt; acl,
+      CreateMode createMode
+    ) throws KeeperException {
+<span class="fc" id="L376">      ZNode parent = findLeafParent(path);</span>
+<span class="fc" id="L377">      String childName =</span>
+        parent.createChild(sessionId, getLeafName(path), data, acl, createMode);
+<span class="fc bfc" id="L379" title="All 2 branches covered.">      return parent.isRoot() ? childName : parent.getPath() + &quot;/&quot; + childName;</span>
+    }
+
+    public String createChild(
+      long sessionId,
+      String childName,
+      byte[] data,
+      List&lt;ACL&gt; acl,
+      CreateMode createMode
+    ) throws KeeperException {
+      // Append a sequence number to path if sequential
+<span class="fc bfc" id="L390" title="All 2 branches covered.">      if (createMode.isSequential()) {</span>
+<span class="fc" id="L391">        childName += String.format(&quot;%08d&quot;, nextSeqNum.addAndGet(1));</span>
+      }
+<span class="fc" id="L393">      ZNode zNode = new ZNode(sessionId, this, childName, data, acl, createMode);</span>
+<span class="fc" id="L394">      addChild(zNode);</span>
+<span class="fc" id="L395">      zNode.signalNodeEvent(EventType.NodeCreated);</span>
+<span class="fc" id="L396">      return childName;</span>
+    }
+
+    public void addChild(ZNode zNode) throws KeeperException {
+<span class="pc bpc" id="L400" title="1 of 2 branches missed.">      if (createMode.isEphemeral()) {</span>
+<span class="nc" id="L401">        throw new KeeperException.NoChildrenForEphemeralsException();</span>
+      }
+<span class="pc bpc" id="L403" title="1 of 2 branches missed.">      if (children.containsKey(zNode.getName())) {</span>
+<span class="nc" id="L404">        throw new KeeperException.NodeExistsException();</span>
+      }
+<span class="fc" id="L406">      children.put(zNode.getName(), zNode);</span>
+<span class="fc" id="L407">      stat.setNumChildren(children.size());</span>
+
+<span class="fc" id="L409">      signalNodeEvent(EventType.NodeChildrenChanged);</span>
+<span class="fc" id="L410">    }</span>
+
+    public void deleteDescendant(String path, int expectedVersion)
+      throws KeeperException {
+<span class="fc" id="L414">      findDescendant(path).delete(expectedVersion);</span>
+<span class="fc" id="L415">    }</span>
+
+    public void delete(int expectedVersion) throws KeeperException {
+<span class="pc bpc" id="L418" title="2 of 4 branches missed.">      assert(!isRoot());</span>
+<span class="pc bpc" id="L419" title="1 of 2 branches missed.">      if (!getChildren().isEmpty()) {</span>
+<span class="nc" id="L420">        throw new KeeperException.NotEmptyException();</span>
+      }
+<span class="pc bpc" id="L422" title="3 of 4 branches missed.">      if (expectedVersion != -1 &amp;&amp; getStat().getVersion() != expectedVersion) {</span>
+<span class="nc" id="L423">        throw new KeeperException.BadVersionException();</span>
+      }
+<span class="pc bpc" id="L425" title="1 of 2 branches missed.">      if (getParent().children.remove(getName()) == null) {</span>
+<span class="nc" id="L426">        throw new KeeperException.NoNodeException();</span>
+      }
+
+<span class="fc" id="L429">      signalNodeEvent(EventType.NodeDeleted);</span>
+<span class="fc" id="L430">      getParent().signalNodeEvent(EventType.NodeChildrenChanged);</span>
+<span class="fc" id="L431">    }</span>
+
+    public boolean isRoot() {
+<span class="fc bfc" id="L434" title="All 2 branches covered.">      return parent == null;</span>
+    }
+
+    public ZNode getParent() {
+<span class="fc" id="L438">      return parent;</span>
+    }
+
+    public String getName() {
+<span class="fc" id="L442">      return name;</span>
+    }
+
+    public byte[] getData() {
+<span class="fc" id="L446">      return data;</span>
+    }
+
+    public void setData(byte[] newData, int expectedVersion)
+      throws KeeperException {
+<span class="nc bnc" id="L451" title="All 4 branches missed.">      if (expectedVersion != -1 &amp;&amp; getStat().getVersion() != expectedVersion) {</span>
+<span class="nc" id="L452">        throw new KeeperException.BadVersionException();</span>
+      }
+<span class="nc" id="L454">      this.data = newData;</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">      stat.setDataLength((newData == null) ? 0 : newData.length);</span>
+<span class="nc" id="L456">      stat.setVersion(version.addAndGet(1));</span>
+<span class="nc" id="L457">      signalNodeEvent(EventType.NodeDataChanged);</span>
+<span class="nc" id="L458">    }</span>
+
+    public List&lt;ACL&gt; getAcl() {
+<span class="nc" id="L461">      return Collections.unmodifiableList(acl);</span>
+    }
+
+    public Stat getStat() {
+<span class="nc" id="L465">      return stat;</span>
+    }
+
+    public Map&lt;String, ZNode&gt; getChildren() {
+<span class="fc" id="L469">      return Collections.unmodifiableMap(children);</span>
+    }
+
+    @Override
+    public Iterator&lt;ZNode&gt; iterator() {
+<span class="fc" id="L474">      return new ZNodeTreeIterator(this);</span>
+    }
+
+    /**
+     * Iterates across all ZNodes in the sub-tree rooted at the specified node
+     * (will also return the specified ZNode).
+     */
+    private static class ZNodeTreeIterator implements Iterator&lt;ZNode&gt; {
+<span class="fc" id="L482">      private boolean selfReturned = false;</span>
+      private ZNode initialZNode;
+      private Iterator&lt;ZNode&gt; childIter;
+      private Iterator&lt;ZNode&gt; childTreeIter;
+      private ZNode currentZNode;
+
+<span class="fc" id="L488">      private ZNodeTreeIterator(ZNode initialZNode) {</span>
+<span class="fc" id="L489">        this.initialZNode = initialZNode;</span>
+<span class="fc" id="L490">        List&lt;ZNode&gt; childrenCopy =</span>
+          new ArrayList&lt;ZNode&gt;(initialZNode.getChildren().values());
+<span class="fc" id="L492">        childIter = childrenCopy.iterator();</span>
+<span class="fc" id="L493">      }</span>
+
+      @Override
+      public boolean hasNext() {
+<span class="fc bfc" id="L497" title="All 2 branches covered.">        if (!selfReturned) {</span>
+<span class="fc" id="L498">          return true;</span>
+        }
+<span class="fc bfc" id="L500" title="All 2 branches covered.">        if (childIter.hasNext()) {</span>
+<span class="fc" id="L501">          return true;</span>
+        }
+<span class="fc bfc" id="L503" title="All 4 branches covered.">        if (childTreeIter != null &amp;&amp; childTreeIter.hasNext()) {</span>
+<span class="fc" id="L504">          return true;</span>
+        }
+<span class="fc" id="L506">        return false;</span>
+      }
+
+      @Override
+      public ZNode next() {
+<span class="fc bfc" id="L511" title="All 2 branches covered.">        if (!selfReturned) {</span>
+<span class="fc" id="L512">          selfReturned = true;</span>
+<span class="fc" id="L513">          currentZNode = initialZNode;</span>
+<span class="fc" id="L514">          return initialZNode;</span>
+        }
+<span class="fc bfc" id="L516" title="All 4 branches covered.">        if (childTreeIter == null || !childTreeIter.hasNext()) {</span>
+<span class="fc" id="L517">          childTreeIter = childIter.next().iterator();</span>
+        }
+<span class="fc" id="L519">        currentZNode = childTreeIter.next();</span>
+<span class="fc" id="L520">        return currentZNode;</span>
+      }
+
+      @Override
+      public void remove() {
+        try {
+<span class="nc" id="L526">          currentZNode.delete(-1);</span>
+<span class="nc" id="L527">        } catch (KeeperException e) {</span>
+<span class="nc" id="L528">          throw new RuntimeException(e);</span>
+<span class="nc" id="L529">        }</span>
+<span class="nc" id="L530">      }</span>
+    }
+  }
+
+  /**
+   * Encapsulates a Watcher and the context in which it was created
+   */
+<span class="pc bpc" id="L537" title="1 of 2 branches missed.">  private static class ContextedWatcher implements Watcher {</span>
+    private final Watcher watcher;
+    private final WatchContext watchContext;
+
+    private ContextedWatcher(
+      Watcher watcher, long sessionId, WatchTriggerPolicy.WatchType watchType
+<span class="fc" id="L543">    ) {</span>
+<span class="fc" id="L544">      this.watcher = watcher;</span>
+<span class="fc" id="L545">      this.watchContext = new WatchContext(sessionId, watchType);</span>
+<span class="fc" id="L546">    }</span>
+
+    public long getSessionId() {
+<span class="fc" id="L549">      return watchContext.getSessionId();</span>
+    }
+
+    public boolean shouldTrigger(EventType eventType) {
+<span class="fc" id="L553">      return watchContext.shouldTrigger(eventType);</span>
+    }
+
+    public void merge(ContextedWatcher contextedWatcher) {
+<span class="pc bpc" id="L557" title="2 of 4 branches missed.">      assert(watcher.equals(contextedWatcher.watcher));</span>
+<span class="fc" id="L558">      watchContext.merge(contextedWatcher.watchContext);</span>
+<span class="fc" id="L559">    }</span>
+
+    @Override
+    public void process(WatchedEvent event) {
+<span class="fc" id="L563">      watcher.process(event);</span>
+<span class="fc" id="L564">    }</span>
+
+    @Override
+    public boolean equals(Object o) {
+      // Equality is only determined by the watcher
+<span class="pc bpc" id="L569" title="1 of 2 branches missed.">      if (this == o) {</span>
+<span class="nc" id="L570">        return true;</span>
+      }
+<span class="pc bpc" id="L572" title="1 of 2 branches missed.">      if (!(o instanceof ContextedWatcher)) {</span>
+<span class="nc" id="L573">        return false;</span>
+      }
+
+<span class="fc" id="L576">      final ContextedWatcher that = (ContextedWatcher) o;</span>
+
+<span class="pc bpc" id="L578" title="1 of 2 branches missed.">      if (!watcher.equals(that.watcher)) {</span>
+<span class="nc" id="L579">        return false;</span>
+      }
+
+<span class="fc" id="L582">      return true;</span>
+    }
+
+    @Override
+    public int hashCode() {
+      // Hash code only computed from the watcher
+<span class="fc" id="L588">      return watcher.hashCode();</span>
+    }
+
+<span class="pc bpc" id="L591" title="1 of 2 branches missed.">    private static class WatchContext {</span>
+<span class="fc" id="L592">      private final Set&lt;WatchTriggerPolicy.WatchType&gt; watchTypeSet =</span>
+        EnumSet.noneOf(WatchTriggerPolicy.WatchType.class);
+      private long sessionId;
+
+<span class="fc" id="L596">      private WatchContext(long sessionId, WatchTriggerPolicy.WatchType watchType) {</span>
+<span class="fc" id="L597">        this.sessionId = sessionId;</span>
+<span class="fc" id="L598">        watchTypeSet.add(watchType);</span>
+<span class="fc" id="L599">      }</span>
+
+      public long getSessionId() {
+<span class="fc" id="L602">        return sessionId;</span>
+      }
+
+      public boolean shouldTrigger(EventType eventType) {
+<span class="pc bpc" id="L606" title="1 of 2 branches missed.">        for (WatchTriggerPolicy.WatchType watchType : watchTypeSet) {</span>
+<span class="pc bpc" id="L607" title="1 of 2 branches missed.">          if (WatchTriggerPolicy.shouldTrigger(watchType, eventType)) {</span>
+<span class="fc" id="L608">            return true;</span>
+          }
+<span class="nc" id="L610">        }</span>
+<span class="nc" id="L611">        return false;</span>
+      }
+
+      public void merge(WatchContext watchContext) {
+<span class="pc bpc" id="L615" title="2 of 4 branches missed.">        assert(sessionId == watchContext.getSessionId());</span>
+<span class="fc" id="L616">        watchTypeSet.addAll(watchContext.watchTypeSet);</span>
+<span class="fc" id="L617">      }</span>
+    }
+  }
+
+  /**
+   * Defines the ZooKeeper policies for when a particular watch type should be
+   * triggered.
+   */
+<span class="pc" id="L625">  private static class WatchTriggerPolicy {</span>
+<span class="pc" id="L626">    private enum WatchType {</span>
+<span class="fc" id="L627">      EXISTS,</span>
+<span class="fc" id="L628">      GETDATA,</span>
+<span class="fc" id="L629">      GETCHILDREN;</span>
+    }
+
+<span class="fc" id="L632">    private static Map&lt;WatchType, Set&lt;EventType&gt;&gt; mapping = constructMapping();</span>
+
+    private static Map&lt;WatchType, Set&lt;EventType&gt;&gt; constructMapping() {
+<span class="fc" id="L635">      Map&lt;WatchType, Set&lt;EventType&gt;&gt; mapping =</span>
+        new EnumMap&lt;WatchType, Set&lt;EventType&gt;&gt;(WatchType.class);
+<span class="fc" id="L637">      mapping.put(WatchType.EXISTS,</span>
+        EnumSet.of(
+          EventType.NodeCreated,
+          EventType.NodeDeleted,
+          EventType.NodeDataChanged
+        )
+      );
+<span class="fc" id="L644">      mapping.put(WatchType.GETDATA,</span>
+        EnumSet.of(
+          EventType.NodeDeleted,
+          EventType.NodeDataChanged
+        )
+      );
+<span class="fc" id="L650">      mapping.put(WatchType.GETCHILDREN,</span>
+        EnumSet.of(
+          EventType.NodeChildrenChanged,
+          EventType.NodeDeleted
+        )
+      );
+<span class="fc" id="L656">      return mapping;</span>
+    }
+
+    public static boolean shouldTrigger(WatchType watchType, EventType eventType) {
+<span class="fc" id="L660">      return mapping.get(watchType).contains(eventType);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

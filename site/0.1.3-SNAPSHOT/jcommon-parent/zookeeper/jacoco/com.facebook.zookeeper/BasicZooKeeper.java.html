@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>BasicZooKeeper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper</a> &gt; <span class="el_source">BasicZooKeeper.java</span></div><h1>BasicZooKeeper.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper;
+
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
+
+import java.util.List;
+
+public class BasicZooKeeper implements ZooKeeperIface {
+  private final ZooKeeper zk;
+
+<span class="nc" id="L30">  public BasicZooKeeper(ZooKeeper zk) {</span>
+<span class="nc" id="L31">    this.zk = zk;</span>
+<span class="nc" id="L32">  }</span>
+
+  @Override
+  public long getSessionId() {
+<span class="nc" id="L36">    return zk.getSessionId();</span>
+  }
+
+  @Override
+  public void close() throws InterruptedException {
+<span class="nc" id="L41">    zk.close();</span>
+<span class="nc" id="L42">  }</span>
+
+  @Override
+  public String create(String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L47">    return zk.create(path, data, acl, createMode);</span>
+  }
+
+  @Override
+  public void delete(String path, int version)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L53">    zk.delete(path, version);</span>
+<span class="nc" id="L54">  }</span>
+
+  @Override
+  public Stat exists(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L59">    return zk.exists(path, watcher);</span>
+  }
+
+  @Override
+  public Stat exists(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L65">    return zk.exists(path, watch);</span>
+  }
+
+  @Override
+  public byte[] getData(String path, Watcher watcher, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L71">    return zk.getData(path, watcher, stat);</span>
+  }
+
+  @Override
+  public byte[] getData(String path, boolean watch, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L77">    return zk.getData(path, watch, stat);</span>
+  }
+
+  @Override
+  public Stat setData(String path, byte[] data, int version)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L83">    return zk.setData(path, data, version);</span>
+  }
+
+  @Override
+  public List&lt;String&gt; getChildren(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L89">    return zk.getChildren(path, watcher);</span>
+  }
+
+  @Override
+  public List&lt;String&gt; getChildren(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L95">    return zk.getChildren(path, watch);</span>
+  }
+
+  @Override
+  public ZooKeeper.States getState() {
+<span class="nc" id="L100">    return zk.getState();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

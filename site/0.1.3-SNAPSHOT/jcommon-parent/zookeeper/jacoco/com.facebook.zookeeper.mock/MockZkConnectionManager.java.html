@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MockZkConnectionManager.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.mock</a> &gt; <span class="el_source">MockZkConnectionManager.java</span></div><h1>MockZkConnectionManager.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.mock;
+
+import com.facebook.zookeeper.ZooKeeperFactory;
+import com.facebook.zookeeper.ZooKeeperIface;
+import com.facebook.zookeeper.connection.ZkConnectionManager;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooKeeper;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MockZkConnectionManager implements ZkConnectionManager {
+  private final ZooKeeperFactory zooKeeperFactory;
+  private ZooKeeperIface zk;
+<span class="fc" id="L31">  private final List&lt;Watcher&gt; watchers = new ArrayList&lt;Watcher&gt;();</span>
+<span class="fc" id="L32">  private boolean isShutdown = false;</span>
+
+<span class="fc" id="L34">  public MockZkConnectionManager(ZooKeeperFactory zooKeeperFactory) {</span>
+<span class="fc" id="L35">    this.zooKeeperFactory = zooKeeperFactory;</span>
+<span class="fc" id="L36">    refreshClient();</span>
+<span class="fc" id="L37">  }</span>
+
+  public void refreshClient() {
+    try {
+<span class="fc bfc" id="L41" title="All 2 branches covered.">      if (zk != null) {</span>
+<span class="fc" id="L42">        zk.close();</span>
+      }
+<span class="fc" id="L44">      zk = zooKeeperFactory.create(new Watcher() {</span>
+        @Override
+        public void process(WatchedEvent event) {
+<span class="pc bpc" id="L47" title="1 of 2 branches missed.">          for (Watcher watcher : watchers) {</span>
+<span class="nc" id="L48">            watcher.process(event);</span>
+<span class="nc" id="L49">          }</span>
+<span class="fc" id="L50">        }</span>
+      });
+<span class="nc" id="L52">    } catch (Exception e) {</span>
+<span class="nc" id="L53">      throw new RuntimeException(e);</span>
+<span class="fc" id="L54">    }</span>
+<span class="fc" id="L55">  }</span>
+
+  @Override
+  public ZooKeeperIface getClient() throws InterruptedException {
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">    if (isShutdown) {</span>
+<span class="nc" id="L60">      throw new IllegalStateException(&quot;Already shutdown&quot;);</span>
+    }
+<span class="fc" id="L62">    return zk;</span>
+  }
+
+  @Override
+  public ZooKeeper.States registerWatcher(Watcher watcher) {
+<span class="nc" id="L67">    watchers.add(watcher);</span>
+<span class="nc" id="L68">    return zk.getState();</span>
+  }
+
+  @Override
+  public void shutdown() throws InterruptedException {
+<span class="nc bnc" id="L73" title="All 2 branches missed.">    if (isShutdown) {</span>
+<span class="nc" id="L74">      throw new IllegalStateException(&quot;Multiple shutdowns&quot;);</span>
+    }
+<span class="nc" id="L76">    isShutdown = true;</span>
+<span class="nc" id="L77">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
