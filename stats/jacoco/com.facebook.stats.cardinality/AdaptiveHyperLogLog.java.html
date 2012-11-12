@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AdaptiveHyperLogLog.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">AdaptiveHyperLogLog.java</span></div><h1>AdaptiveHyperLogLog.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.NotThreadSafe;
+
+import static com.facebook.stats.cardinality.BucketAndHash.fromHash;
+import static com.facebook.stats.cardinality.HyperLogLogUtil.computeHash;
+import static com.google.common.base.Preconditions.checkArgument;
+
+@NotThreadSafe
+public class AdaptiveHyperLogLog {
+<span class="nc" id="L28">  private static final int INSTANCE_SIZE = UnsafeUtil.sizeOf(AdaptiveHyperLogLog.class);</span>
+
+  private Estimator estimator;
+
+<span class="nc" id="L32">  public AdaptiveHyperLogLog(int numberOfBuckets) {</span>
+<span class="nc" id="L33">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(numberOfBuckets),
+      &quot;numberOfBuckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L38">    this.estimator = new SparseEstimator(numberOfBuckets);</span>
+<span class="nc" id="L39">  }</span>
+
+  public AdaptiveHyperLogLog(int[] buckets)
+<span class="nc" id="L42">  {</span>
+<span class="nc" id="L43">    checkArgument(Numbers.isPowerOf2(buckets.length), &quot;numberOfBuckets must be a power of 2&quot;);</span>
+
+<span class="nc" id="L45">    estimator = makeEstimator(buckets);</span>
+<span class="nc" id="L46">  }</span>
+
+  /**
+   * @return true if the estimation was affected by this addition
+   */
+  public boolean add(long value) {
+<span class="nc" id="L52">    BucketAndHash bucketAndHash = fromHash(computeHash(value), estimator.getNumberOfBuckets());</span>
+<span class="nc" id="L53">    int lowestBitPosition = Long.numberOfTrailingZeros(bucketAndHash.getHash()) + 1;</span>
+
+<span class="nc bnc" id="L55" title="All 6 branches missed.">    if (estimator.getClass() == SparseEstimator.class &amp;&amp;</span>
+      (estimator.estimateSizeInBytes() &gt;= DenseEstimator.estimateSizeInBytes(estimator.getNumberOfBuckets())
+         || lowestBitPosition &gt;= SparseEstimator.MAX_BUCKET_VALUE)) {
+<span class="nc" id="L58">      estimator = new DenseEstimator(estimator.buckets());</span>
+    }
+
+<span class="nc" id="L61">    return estimator.setIfGreater(bucketAndHash.getBucket(), lowestBitPosition);</span>
+  }
+
+  public long estimate() {
+<span class="nc" id="L65">    return estimator.estimate();</span>
+  }
+
+  public int getSizeInBytes() {
+<span class="nc" id="L69">    return estimator.estimateSizeInBytes() + INSTANCE_SIZE;</span>
+  }
+
+  public int getNumberOfBuckets() {
+<span class="nc" id="L73">    return estimator.getNumberOfBuckets();</span>
+  }
+
+  public int[] buckets() {
+<span class="nc" id="L77">    return estimator.buckets();</span>
+  }
+
+  public void merge(AdaptiveHyperLogLog other) {
+<span class="nc" id="L81">    estimator = makeEstimator(HyperLogLogUtil.mergeBuckets(this.buckets(), other.buckets()));</span>
+<span class="nc" id="L82">  }</span>
+
+  public static AdaptiveHyperLogLog merge(AdaptiveHyperLogLog first, AdaptiveHyperLogLog second) {
+<span class="nc" id="L85">    return new AdaptiveHyperLogLog(HyperLogLogUtil.mergeBuckets(first.buckets(), second.buckets()));</span>
+  }
+
+  private static Estimator makeEstimator(int[] buckets) {
+<span class="nc" id="L89">    int nonZeroBuckets = 0;</span>
+<span class="nc" id="L90">    int maxValue = 0;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    for (int value : buckets) {</span>
+<span class="nc" id="L92">      maxValue = Math.max(maxValue, value);</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">      if (value &gt; 0) {</span>
+<span class="nc" id="L94">        ++nonZeroBuckets;</span>
+      }
+    }
+
+<span class="nc bnc" id="L98" title="All 4 branches missed.">    if (maxValue &lt; SparseEstimator.MAX_BUCKET_VALUE &amp;&amp;</span>
+      SparseEstimator.estimateSizeInBytes(nonZeroBuckets, buckets.length) &lt; DenseEstimator.estimateSizeInBytes(buckets.length)) {
+<span class="nc" id="L100">      return new SparseEstimator(buckets);</span>
+    }
+    else {
+<span class="nc" id="L103">      return new DenseEstimator(buckets);</span>
+    }
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

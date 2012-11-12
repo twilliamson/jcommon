@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>HyperLogLogUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">HyperLogLogUtil.java</span></div><h1>HyperLogLogUtil.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
+import java.util.Random;
+
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+
+<span class="nc" id="L27">public class HyperLogLogUtil {</span>
+<span class="fc" id="L28">  private static final HashFunction HASH = Hashing.murmur3_128();</span>
+
+  public static long estimateCardinality(int[] bucketValues) {
+<span class="nc" id="L31">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(bucketValues.length),
+      &quot;number of buckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L36">    int zeroBuckets = 0;</span>
+<span class="nc" id="L37">    double sum = 0;</span>
+<span class="nc bnc" id="L38" title="All 2 branches missed.">    for (Integer value : bucketValues) {</span>
+<span class="nc" id="L39">      sum += 1.0 / (1L &lt;&lt; value);</span>
+<span class="nc bnc" id="L40" title="All 2 branches missed.">      if (value == 0) {</span>
+<span class="nc" id="L41">        ++zeroBuckets;</span>
+      }
+    }
+
+<span class="nc" id="L45">    double alpha = computeAlpha(bucketValues.length);</span>
+<span class="nc" id="L46">    double result = alpha * bucketValues.length * bucketValues.length / sum;</span>
+
+<span class="nc bnc" id="L48" title="All 2 branches missed.">    if (result &lt;= 2.5 * bucketValues.length) {</span>
+      // adjust for small cardinalities
+<span class="nc bnc" id="L50" title="All 2 branches missed.">      if (zeroBuckets &gt; 0) {</span>
+        // baselineCount is the number of buckets with value 0
+<span class="nc" id="L52">        result = bucketValues.length * Math.log(bucketValues.length * 1.0 / zeroBuckets);</span>
+      }
+    }
+
+<span class="nc" id="L56">    return Math.round(result);</span>
+  }
+
+  public static int[] generateBuckets(int numberOfBuckets, long cardinality) {
+<span class="nc" id="L60">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(numberOfBuckets),
+      &quot;number of buckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L65">    double[] probabilities = computeProbabilities(numberOfBuckets, cardinality, Byte.MAX_VALUE);</span>
+
+<span class="nc" id="L67">    Random random = new Random();</span>
+<span class="nc" id="L68">    int[] result = new int[numberOfBuckets];</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    for (int i = 0; i &lt; numberOfBuckets; ++i) {</span>
+<span class="nc" id="L70">      double trial = random.nextDouble();</span>
+
+<span class="nc" id="L72">      int k = 0;</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">      while (trial &gt; probabilities[k]) {</span>
+<span class="nc" id="L74">        ++k;</span>
+      }
+
+<span class="nc" id="L77">      result[i] = k;</span>
+    }
+
+<span class="nc" id="L80">    return result;</span>
+  }
+
+  /**
+   * Probability that a bucket has a value &lt;= k
+   */
+  private static double cumulativeProbability(int numberOfBuckets, long cardinality, int k) {
+<span class="nc" id="L87">    return Math.pow(1.0 - 1.0 / ((1L &lt;&lt; k) * 1.0 * numberOfBuckets), cardinality);</span>
+  }
+
+  /**
+   * Compute cumulative probabilities for value &lt;= k for all k = 0..maxK
+   */
+  private static double[] computeProbabilities(int numberOfBuckets, long cardinality, int maxK) {
+<span class="nc" id="L94">    double[] result = new double[maxK];</span>
+
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    for (int k = 0; k &lt; maxK; ++k) {</span>
+<span class="nc" id="L97">      result[k] = cumulativeProbability(numberOfBuckets, cardinality, k);</span>
+    }
+
+<span class="nc" id="L100">    return result;</span>
+  }
+
+  public static int[] mergeBuckets(int[] first, int[] second) {
+<span class="nc" id="L104">    checkNotNull(first, &quot;first is null&quot;);</span>
+<span class="nc" id="L105">    checkNotNull(second, &quot;second is null&quot;);</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">    checkArgument(</span>
+      first.length == second.length,
+      &quot;Array sizes must match, found %s vs %s&quot;,
+      first.length,
+      second.length
+    );
+
+<span class="nc" id="L113">    int[] result = new int[first.length];</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">    for (int i = 0; i &lt; first.length; i++) {</span>
+<span class="nc" id="L115">      result[i] = Math.max(first[i], second[i]);</span>
+    }
+
+<span class="nc" id="L118">    return result;</span>
+  }
+
+  public static double computeAlpha(int numberOfBuckets) {
+    double alpha;
+<span class="pc bpc" id="L123" title="3 of 4 branches missed.">    switch (numberOfBuckets) {</span>
+      case (1 &lt;&lt; 4):
+<span class="nc" id="L125">        alpha = 0.673;</span>
+<span class="nc" id="L126">        break;</span>
+      case (1 &lt;&lt; 5):
+<span class="nc" id="L128">        alpha = 0.697;</span>
+<span class="nc" id="L129">        break;</span>
+      case (1 &lt;&lt; 6):
+<span class="nc" id="L131">        alpha = 0.709;</span>
+<span class="nc" id="L132">        break;</span>
+      default:
+<span class="fc" id="L134">        alpha = (0.7213 / (1 + 1.079 / numberOfBuckets));</span>
+    }
+<span class="fc" id="L136">    return alpha;</span>
+  }
+
+  /**
+   * Computes a 64-bit hash suitable for adding to a hyperloglog instance.
+   *
+   * The hyperloglog implementation uses bits from least significant to most significant first, so
+   * If you need to keep shorter hashes around (e.g., for storage), make sure to drop bits from the
+   * most significant side, as the hyperloglog implementation uses bits from least significant
+   * to most significant.
+   */
+  public static long computeHash(long value) {
+<span class="fc" id="L148">    return HASH.hashLong(value).asLong();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

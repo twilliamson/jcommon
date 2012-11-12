@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StatsUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.mx</a> &gt; <span class="el_source">StatsUtil.java</span></div><h1>StatsUtil.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.mx;
+
+import com.facebook.stats.EventCounterIf;
+import com.facebook.stats.MultiWindowDistribution;
+import com.facebook.stats.MultiWindowRate;
+import com.facebook.stats.MultiWindowSpread;
+import com.facebook.stats.QuantileDigest;
+import com.facebook.stats.ReadableMultiWindowCounter;
+import com.facebook.stats.ReadableMultiWindowGauge;
+import com.facebook.stats.ReadableMultiWindowRate;
+import com.google.common.collect.ImmutableList;
+import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Helper methods for converting stat objects into key/value pairs that conform to standing
+ * naming conventions around &lt;type&gt;.&lt;time_window&gt;
+ */
+<span class="nc" id="L38">public class StatsUtil {</span>
+  /**
+   * @deprecated replaced by addRateAndSumToCounters
+   */
+  @Deprecated
+  public static void adddKeyToCounters(
+    String baseKey, ReadableMultiWindowRate rate, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="nc" id="L46">    addRateToCounters(baseKey,  rate, counterMap);</span>
+<span class="nc" id="L47">    addSumToCounters(baseKey,  rate, counterMap);</span>
+<span class="nc" id="L48">  }</span>
+
+  public static void addRateAndSumToCounters(
+    String baseKey, ReadableMultiWindowRate rate, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L53">    addRateToCounters(baseKey,  rate, counterMap);</span>
+<span class="fc" id="L54">    addSumToCounters(baseKey,  rate, counterMap);</span>
+<span class="fc" id="L55">  }</span>
+
+  public static void addRateToCounters(
+    String baseKey, ReadableMultiWindowRate rate, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L60">    counterMap.put(baseKey + &quot;.rate&quot;, rate.getAllTimeRate());</span>
+<span class="fc" id="L61">    counterMap.put(baseKey + &quot;.rate.3600&quot;, rate.getHourRate());</span>
+<span class="fc" id="L62">    counterMap.put(baseKey + &quot;.rate.600&quot;, rate.getTenMinuteRate());</span>
+<span class="fc" id="L63">    counterMap.put(baseKey + &quot;.rate.60&quot;, rate.getMinuteRate());</span>
+<span class="fc" id="L64">  }</span>
+
+  public static void addSumToCounters(
+    String baseKey, ReadableMultiWindowRate rate, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L69">    counterMap.put(baseKey + &quot;.sum&quot;, rate.getAllTimeSum());</span>
+<span class="fc" id="L70">    counterMap.put(baseKey + &quot;.sum.3600&quot;, rate.getHourSum());</span>
+<span class="fc" id="L71">    counterMap.put(baseKey + &quot;.sum.600&quot;, rate.getTenMinuteSum());</span>
+<span class="fc" id="L72">    counterMap.put(baseKey + &quot;.sum.60&quot;, rate.getMinuteSum());</span>
+<span class="fc" id="L73">  }</span>
+
+  public static void addGaugeAvgToCounters(
+    String baseKey, ReadableMultiWindowGauge gauge, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L78">    counterMap.put(baseKey + &quot;.avg&quot;, gauge.getAllTimeAvg());</span>
+<span class="fc" id="L79">    counterMap.put(baseKey + &quot;.avg.3600&quot;, gauge.getHourAvg());</span>
+<span class="fc" id="L80">    counterMap.put(baseKey + &quot;.avg.600&quot;, gauge.getTenMinuteAvg());</span>
+<span class="fc" id="L81">    counterMap.put(baseKey + &quot;.avg.60&quot;, gauge.getMinuteAvg());</span>
+<span class="fc" id="L82">  }</span>
+
+  public static void addGaugeSamplesToCounters(
+    String baseKey, ReadableMultiWindowGauge gauge, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L87">    counterMap.put(baseKey + &quot;.samples&quot;, gauge.getAllTimeSamples());</span>
+<span class="fc" id="L88">    counterMap.put(baseKey + &quot;.samples.3600&quot;, gauge.getHourSamples());</span>
+<span class="fc" id="L89">    counterMap.put(baseKey + &quot;.samples.600&quot;, gauge.getTenMinuteSamples());</span>
+<span class="fc" id="L90">    counterMap.put(baseKey + &quot;.samples.60&quot;, gauge.getMinuteSamples());</span>
+<span class="fc" id="L91">  }</span>
+
+  /**
+   * internal helper method
+   *
+   * @param baseKey base baseKey name, adds standard time ranges &quot;.60&quot;, &quot;.3600&quot;, ...
+   * @param counter the counter to add
+   * @param counterMap map of counters
+   */
+  private static void addValueToCounters(
+    String baseKey, ReadableMultiWindowCounter counter, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L103">    counterMap.put(baseKey, counter.getAllTimeValue());</span>
+<span class="fc" id="L104">    counterMap.put(baseKey + &quot;.3600&quot;, counter.getHourValue());</span>
+<span class="fc" id="L105">    counterMap.put(baseKey + &quot;.600&quot;, counter.getTenMinuteValue());</span>
+<span class="fc" id="L106">    counterMap.put(baseKey + &quot;.60&quot;, counter.getMinuteValue());</span>
+<span class="fc" id="L107">  }</span>
+
+  public static void addSpreadToCounters(
+    String baseKey, MultiWindowSpread spread, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="fc" id="L112">    addValueToCounters(baseKey + &quot;.min&quot;, spread.getMin(), counterMap);</span>
+<span class="fc" id="L113">    addValueToCounters(baseKey + &quot;.max&quot;, spread.getMax(), counterMap);</span>
+<span class="fc" id="L114">    addGaugeAvgToCounters(baseKey, spread.getGauge(), counterMap);</span>
+<span class="fc" id="L115">    addGaugeSamplesToCounters(baseKey, spread.getGauge(), counterMap);</span>
+<span class="fc" id="L116">  }</span>
+
+  public static void addQuantileToCounters(
+    String baseKey, MultiWindowDistribution quantiles, Map&lt;String, Long&gt; counterMap
+  ) {
+<span class="nc" id="L121">    addQuantilesToCounters(baseKey, &quot;.60&quot;, counterMap, quantiles.getOneMinuteQuantiles());</span>
+<span class="nc" id="L122">    addQuantilesToCounters(baseKey, &quot;.600&quot;, counterMap, quantiles.getTenMinuteQuantiles());</span>
+<span class="nc" id="L123">    addQuantilesToCounters(baseKey, &quot;.3600&quot;, counterMap, quantiles.getOneHourQuantiles());</span>
+<span class="nc" id="L124">    addQuantilesToCounters(baseKey, &quot;&quot;, counterMap, quantiles.getAllTimeQuantiles());</span>
+<span class="nc" id="L125">  }</span>
+
+  public static void addHistogramToExportedValues(
+    String baseKey, MultiWindowDistribution quantiles, Map&lt;String, String&gt; values
+  ) {
+<span class="nc" id="L130">    addHistogramToExportedValues(baseKey, &quot;.60&quot;, values, quantiles.getOneMinute());</span>
+<span class="nc" id="L131">    addHistogramToExportedValues(baseKey, &quot;.600&quot;, values, quantiles.getTenMinutes());</span>
+<span class="nc" id="L132">    addHistogramToExportedValues(baseKey, &quot;.3600&quot;, values, quantiles.getOneHour());</span>
+<span class="nc" id="L133">    addHistogramToExportedValues(baseKey, &quot;&quot;, values, quantiles.getAllTime());</span>
+<span class="nc" id="L134">  }</span>
+
+  private static void addHistogramToExportedValues(
+    String baseKey, String windowKey, Map&lt;String, String&gt; values, QuantileDigest digest
+  ) {
+<span class="nc" id="L139">    values.put(baseKey + &quot;.hist&quot; + windowKey, serializeHistogram(digest));</span>
+<span class="nc" id="L140">  }</span>
+
+  private static String serializeHistogram(QuantileDigest digest) {
+<span class="nc" id="L143">    int buckets = 100;</span>
+
+<span class="nc" id="L145">    long min = digest.getMin();</span>
+<span class="nc" id="L146">    long max = digest.getMax();</span>
+<span class="nc" id="L147">    long bucketSize = (max - min + buckets) / buckets;</span>
+
+<span class="nc" id="L149">    ImmutableList.Builder&lt;Long&gt; boundaryBuilder = ImmutableList.builder();</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">    for (int i = 1; i &lt; buckets + 1; ++i) {</span>
+<span class="nc" id="L151">      boundaryBuilder.add(min + bucketSize * i);</span>
+    }
+
+<span class="nc" id="L154">    ImmutableList&lt;Long&gt; boundaries = boundaryBuilder.build();</span>
+<span class="nc" id="L155">    List&lt;QuantileDigest.Bucket&gt; counts = digest.getHistogram(boundaries);</span>
+
+<span class="nc" id="L157">    StringBuilder builder = new StringBuilder();</span>
+
+    // add bogus bucket (fb303 ui ignores the first one, for whatever reason)
+<span class="nc" id="L160">    builder.append(&quot;-1:0:0,&quot;);</span>
+
+<span class="nc bnc" id="L162" title="All 2 branches missed.">    for (int i = 0; i &lt; boundaries.size(); ++i) {</span>
+<span class="nc" id="L163">      long lowBoundary = min;</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">      if (i &gt; 0) {</span>
+<span class="nc" id="L165">        lowBoundary = boundaries.get(i - 1);</span>
+      }
+
+<span class="nc" id="L168">      builder.append(lowBoundary)</span>
+        .append(':')
+        .append(Math.round(counts.get(i).getCount()))
+        .append(':')
+        .append(Math.round(counts.get(i).getMean()))
+        .append(',');
+    }
+
+    // add a final bucket so that fb303 ui shows the max value
+<span class="nc" id="L177">    builder.append(max);</span>
+<span class="nc" id="L178">    builder.append(&quot;:0:0&quot;);</span>
+
+<span class="nc" id="L180">    return builder.toString();</span>
+  }
+
+  private static void addQuantilesToCounters(
+    String baseKey,
+    String windowKey,
+    Map&lt;String, Long&gt; counters,
+    Map&lt;MultiWindowDistribution.Quantile, Long&gt; oneMinuteQuantiles
+  ) {
+<span class="nc bnc" id="L189" title="All 2 branches missed.">    for (Map.Entry&lt;MultiWindowDistribution.Quantile, Long&gt; entry : oneMinuteQuantiles.entrySet()) {</span>
+<span class="nc" id="L190">      counters.put(baseKey + &quot;.&quot; + entry.getKey().getKey() + windowKey, entry.getValue());</span>
+<span class="nc" id="L191">    }</span>
+<span class="nc" id="L192">  }</span>
+
+  public static void setAllTimeSum(MultiWindowRate rate, long value) {
+<span class="nc" id="L195">    long old = rate.getAllTimeSum();</span>
+<span class="nc bnc" id="L196" title="All 2 branches missed.">    if(old &gt; value) {</span>
+<span class="nc" id="L197">      throw new IllegalArgumentException(&quot;MultiWindowRate counters can not decrement their allTimeSum (&quot; + old + &quot; &gt; &quot; + value + &quot;)&quot;);</span>
+    }
+<span class="nc bnc" id="L199" title="All 2 branches missed.">    if(old == value) {</span>
+<span class="nc" id="L200">      return;</span>
+    }
+<span class="nc" id="L202">    long delta = value - old;</span>
+<span class="nc" id="L203">    rate.add(delta);</span>
+<span class="nc" id="L204">  }</span>
+
+  public static Duration extentOf(
+    EventCounterIf counter1, EventCounterIf counter2
+  ) {
+<span class="fc" id="L209">    ReadableDateTime start = counter1.getStart();</span>
+<span class="fc" id="L210">    ReadableDateTime end = counter1.getEnd();</span>
+
+<span class="fc bfc" id="L212" title="All 2 branches covered.">    if (counter2.getStart().isBefore(start)) {</span>
+<span class="fc" id="L213">      start = counter2.getStart();</span>
+    }
+
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">    if (counter2.getEnd().isAfter(end)) {</span>
+<span class="nc" id="L217">      end = counter2.getEnd();</span>
+    }
+
+<span class="fc" id="L220">    return new Duration(start, end);</span>
+  }
+
+  public static void main(String[] args) {
+<span class="nc" id="L224">    DateTime start = new DateTime(&quot;2012-01-01T01:01:00.000Z&quot;);</span>
+<span class="nc" id="L225">    DateTime end= new DateTime(&quot;2012-01-01T01:02:00.000Z&quot;);</span>
+<span class="nc" id="L226">    Duration x = new Duration(start, end);</span>
+<span class="nc" id="L227">    System.err.println(x.getMillis());</span>
+<span class="nc" id="L228">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

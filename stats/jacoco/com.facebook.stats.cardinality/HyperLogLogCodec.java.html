@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>HyperLogLogCodec.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">HyperLogLogCodec.java</span></div><h1>HyperLogLogCodec.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+/**
+ * Output format is:
+ * &lt;pre&gt;
+ *     estimate - 4 byte float
+ *     log2(buckets) - unsigned nibble
+ *     log2Ceiling(maxValue) - unsigned nibble
+ *     bucket values - arithmetic encoded
+ * &lt;/pre&gt;
+ */
+<span class="nc" id="L35">public class HyperLogLogCodec {</span>
+  public void encodeHyperLogLog(HyperLogLog hyperLogLog, OutputStream out) throws IOException {
+<span class="nc" id="L37">    Preconditions.checkNotNull(hyperLogLog, &quot;hyperLogLog is null&quot;);</span>
+
+<span class="nc" id="L39">    encodeHyperLogLog(hyperLogLog, new DataOutputStream(out));</span>
+<span class="nc" id="L40">  }</span>
+
+  public void encodeHyperLogLog(HyperLogLog hyperLogLog, DataOutputStream out) throws IOException {
+<span class="nc" id="L43">    encodeBuckets(out, hyperLogLog.buckets(), hyperLogLog.estimate());</span>
+<span class="nc" id="L44">  }</span>
+
+  public void encodeAdaptiveHyperLogLog(AdaptiveHyperLogLog hyperLogLog, OutputStream out)
+      throws IOException {
+<span class="nc" id="L48">    Preconditions.checkNotNull(hyperLogLog, &quot;hyperLogLog is null&quot;);</span>
+
+<span class="nc" id="L50">    encodeAdaptiveHyperLogLog(hyperLogLog, new DataOutputStream(out));</span>
+<span class="nc" id="L51">  }</span>
+
+  public void encodeAdaptiveHyperLogLog(AdaptiveHyperLogLog hyperLogLog, DataOutputStream out)
+      throws IOException {
+<span class="nc" id="L55">    encodeBuckets(out, hyperLogLog.buckets(), hyperLogLog.estimate());</span>
+<span class="nc" id="L56">  }</span>
+
+  public void encodeBuckets(DataOutputStream out, int[] buckets, float estimate)
+      throws IOException {
+    // get the number of buckets, which must be a power of 2
+<span class="nc" id="L61">    int numberOfBuckets = buckets.length;</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">    Preconditions.checkArgument(numberOfBuckets &gt; 0, &quot;buckets is empty&quot;);</span>
+<span class="nc" id="L63">    Preconditions.checkArgument(</span>
+        isPowerOf2(numberOfBuckets),
+        &quot;numberOfBuckets must be a power of 2&quot;
+    );
+
+    // find the max value
+<span class="nc" id="L69">    int maxValue = buckets[0];</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">    for (int value : buckets) {</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">      if (value &gt; maxValue) {</span>
+<span class="nc" id="L72">        maxValue = value;</span>
+      }
+    }
+    // replace max value with the next power of 2, so we can encode using log2
+<span class="nc" id="L76">    maxValue = nextPowerOf2(maxValue);</span>
+
+    // write the estimate as a float
+<span class="nc" id="L79">    int estimateFloatBits = Float.floatToIntBits(estimate);</span>
+<span class="nc" id="L80">    out.writeInt(estimateFloatBits);</span>
+    // &quot;read&quot; the estimate back from the float bits because for large values we will loose
+    // precision, also the JVM will use 40 bit floats on some platforms and we will not have
+    // this extra precision when the value is deseralized
+<span class="nc" id="L84">    estimate = Float.intBitsToFloat(estimateFloatBits);</span>
+
+    // write the bucket count and max value in as two nibbles
+<span class="nc" id="L87">    int log2Buckets = Integer.numberOfTrailingZeros(numberOfBuckets);</span>
+    // max value is the max number of symbols used during encoding
+<span class="nc" id="L89">    int log2MaxValue = Integer.numberOfTrailingZeros(maxValue);</span>
+<span class="nc" id="L90">    byte bucketsAndMaxValue = (byte) (log2Buckets &lt;&lt; 4 | log2MaxValue);</span>
+<span class="nc" id="L91">    out.write(bucketsAndMaxValue);</span>
+
+    // create the static symbol model based on the estimated cardinality
+<span class="nc" id="L94">    SortedStaticModel hyperLogLogModel = createHyperLogLogSymbolModel(</span>
+        (long) estimate,
+        numberOfBuckets,
+        (byte) maxValue
+    );
+
+    // create the encoder with an estimated output size
+<span class="nc" id="L101">    ArithmeticEncoder encoder = new ArithmeticEncoder(hyperLogLogModel, out);</span>
+
+    // write each byte
+<span class="nc bnc" id="L104" title="All 2 branches missed.">    for (int symbol : buckets) {</span>
+<span class="nc" id="L105">      encoder.encode(symbol);</span>
+    }
+
+    // finalize the encoding
+<span class="nc" id="L109">    encoder.close();</span>
+<span class="nc" id="L110">  }</span>
+
+  public HyperLogLog decodeHyperLogLog(InputStream in)
+      throws IOException {
+<span class="nc" id="L114">    return decodeHyperLogLog(new DataInputStream(in));</span>
+  }
+
+  public HyperLogLog decodeHyperLogLog(DataInputStream in)
+      throws IOException {
+<span class="nc" id="L119">    int[] buckets = decodeBuckets(in);</span>
+<span class="nc" id="L120">    return new HyperLogLog(buckets);</span>
+  }
+
+  public AdaptiveHyperLogLog decodeAdaptiveHyperLogLog(InputStream in)
+      throws IOException {
+<span class="nc" id="L125">    return decodeAdaptiveHyperLogLog(new DataInputStream(in));</span>
+  }
+
+  public AdaptiveHyperLogLog decodeAdaptiveHyperLogLog(DataInputStream in)
+      throws IOException {
+<span class="nc" id="L130">    int[] buckets = decodeBuckets(in);</span>
+<span class="nc" id="L131">    return new AdaptiveHyperLogLog(buckets);</span>
+  }
+
+  private int[] decodeBuckets(DataInputStream in)
+      throws IOException {
+<span class="nc" id="L136">    Preconditions.checkNotNull(in, &quot;in is null&quot;);</span>
+
+    // read the estimate
+<span class="nc" id="L139">    int estimateFloatBits = in.readInt();</span>
+<span class="nc" id="L140">    float estimate = Float.intBitsToFloat(estimateFloatBits);</span>
+
+    // read the bucket count and max value which were encoded as two nibbles
+<span class="nc" id="L143">    byte bucketsAndMaxValue = in.readByte();</span>
+<span class="nc" id="L144">    int log2NumberOfBuckets = (bucketsAndMaxValue &gt;&gt; 4) &amp; 0xF;</span>
+<span class="nc" id="L145">    int numberOfBuckets = 1 &lt;&lt; log2NumberOfBuckets;</span>
+<span class="nc" id="L146">    int log2MaxValue = bucketsAndMaxValue &amp; 0xF;</span>
+<span class="nc" id="L147">    byte maxValue = (byte) (1 &lt;&lt; log2MaxValue);</span>
+
+    // create the model
+<span class="nc" id="L150">    SortedStaticModel hyperLogLogModel = createHyperLogLogSymbolModel(</span>
+        (long) estimate,
+        numberOfBuckets,
+        maxValue
+    );
+
+    // read the bucket values
+<span class="nc" id="L157">    int[] buckets = new int[numberOfBuckets];</span>
+<span class="nc" id="L158">    ArithmeticDecoder decoder = new ArithmeticDecoder(hyperLogLogModel, in);</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    for (int index = 0; index &lt; buckets.length; index++) {</span>
+<span class="nc" id="L160">      buckets[index] = decoder.decode();</span>
+    }
+<span class="nc" id="L162">    return buckets;</span>
+  }
+
+  public static SortedStaticModel createHyperLogLogSymbolModel(
+      long estimate,
+      int bucketCount,
+      byte maxValue
+  ) {
+<span class="nc" id="L170">    double[] probability = hyperLogLogProbabilities(estimate, bucketCount, maxValue);</span>
+<span class="nc" id="L171">    return new SortedStaticModel(probability);</span>
+  }
+
+  public static double[] hyperLogLogProbabilities(
+      long cardinality,
+      int bucketCount,
+      byte maxValue
+  ) {
+    // the probability of each symbol
+<span class="nc" id="L180">    double[] probabilities = new double[(int) maxValue + 1];</span>
+
+<span class="nc" id="L182">    double lastCumulativeProbability = 0;</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    for (int value = 0; value &lt; (int) maxValue; value++) {</span>
+<span class="nc" id="L184">      double cumulativeProbability = probabilityRegisterLessThan(cardinality, bucketCount, value);</span>
+<span class="nc" id="L185">      probabilities[value] = cumulativeProbability - lastCumulativeProbability;</span>
+<span class="nc" id="L186">      lastCumulativeProbability = cumulativeProbability;</span>
+    }
+
+<span class="nc" id="L189">    return probabilities;</span>
+  }
+
+  public static double probabilityRegisterLessThan(long cardinality, int bucketCount, int value) {
+<span class="nc" id="L193">    return StrictMath.pow(1.0d - 1.0d / ((1 &lt;&lt; value) * 1.0d * bucketCount), cardinality);</span>
+  }
+
+  private static byte nextPowerOf2(int value) {
+    // Integer.highestOneBit returns the input value with all bits cleared
+    // except for the highest 1 bit (this is very confusing).
+<span class="nc" id="L199">    int newValue = Integer.highestOneBit(value);</span>
+
+    // if the newValue == value, value was a power of two
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    if (newValue &lt; value) {</span>
+      // otherwise, shift the new value over one bit
+<span class="nc" id="L204">      newValue &lt;&lt;= 1;</span>
+    }
+    // if original value was 0, make it 1
+<span class="nc bnc" id="L207" title="All 2 branches missed.">    if (newValue == 0) {</span>
+<span class="nc" id="L208">      newValue++;</span>
+    }
+<span class="nc" id="L210">    return (byte) newValue;</span>
+  }
+
+  private static boolean isPowerOf2(int numberOfBuckets) {
+<span class="nc bnc" id="L214" title="All 2 branches missed.">    return (numberOfBuckets &amp; (numberOfBuckets - 1)) == 0;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

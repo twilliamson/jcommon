@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JVMStatsExporter.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.mx</a> &gt; <span class="el_source">JVMStatsExporter.java</span></div><h1>JVMStatsExporter.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.mx;
+
+import com.google.common.collect.ImmutableSet;
+
+import javax.management.JMException;
+import javax.management.MBeanAttributeInfo;
+import javax.management.MBeanInfo;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.CompositeType;
+import javax.management.openmbean.OpenMBeanAttributeInfo;
+import javax.management.openmbean.OpenType;
+import javax.management.openmbean.SimpleType;
+import java.lang.management.ManagementFactory;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
+
+/**
+ * Exports JVM stats so that they are available as counter values in fb303 stats.
+ * 
+ */
+public class JVMStatsExporter {
+  private final Stats stats;
+  private final Pattern statNamePattern;
+  private static final String NAME_PREFIX = &quot;jvm&quot;;
+<span class="fc" id="L43">  private static final Set&lt;? extends OpenType&gt; NUMERIC_TYPES = new ImmutableSet.Builder&lt;SimpleType&gt;()</span>
+    .add(SimpleType.BYTE)
+    .add(SimpleType.SHORT)
+    .add(SimpleType.INTEGER)
+    .add(SimpleType.LONG)
+    .add(SimpleType.FLOAT)
+    .add(SimpleType.DOUBLE)
+    .build();
+
+  /**
+   * Creates an instance and exports the counters from the beans matching the supplied name
+   * pattern.
+   * 
+   *
+   * @param stats The stats instance to which all the dynamic counters will be registered.
+   * @param statNamePattern A regex {@link java.util.regex.Pattern} that is matched against all
+   * generated counter key names. Only the counters that match the supplied pattern are added to 
+   * Stats. Note that all stats have the prefix &lt;code&gt;&quot;jvm.&quot;&lt;/code&gt;.
+   * @param beanNamePatterns the object name patterns used to discover the Mbeans.
+   * 
+   * @throws JMException if the beanNamePattern is not a valid bean name pattern.
+   * @throws java.util.regex.PatternSyntaxException if the syntax of statNamePattern is invalid
+   * 
+   * @see ObjectName for details on the syntax of beanNamePattern 
+   */
+  public JVMStatsExporter(
+    Stats stats,
+    String statNamePattern,
+    String... beanNamePatterns) 
+<span class="fc" id="L72">      throws JMException {</span>
+<span class="fc" id="L73">    this.stats = stats;</span>
+<span class="fc" id="L74">    this.statNamePattern = Pattern.compile(statNamePattern);</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">    for (String beanNamePattern : beanNamePatterns) {</span>
+<span class="fc" id="L76">      exportNumericAttributes(new ObjectName(beanNamePattern));      </span>
+    }
+<span class="fc" id="L78">  }</span>
+
+  /**
+   * Creates an instance and exports all the counters from all the platform beans.
+   * 
+   * @param stats The stats instance to which all dynamic counters will be registered.
+   * @throws JMException unexpected, indicates a coding/error bug.
+   */
+  public JVMStatsExporter(Stats stats) throws JMException {
+<span class="fc" id="L87">    this(stats, &quot;.*&quot;, &quot;java.lang:type=*,*&quot;);</span>
+<span class="fc" id="L88">  }</span>
+
+  /**
+   * Exports all the numeric attributes of beans matching the supplied MXBean name pattern.
+   * Also, discovers the numeric properties of the attributes of type CompositeData and registers
+   * them as well.
+   * 
+   * @param beanNamePattern the bean name pattern used to discover the beans.
+   * @see javax.management.ObjectName for bean name pattern syntax
+   * @see java.lang.management for the list of java platform mbeans
+   * 
+   * @throws JMException if there are errors querying MBeans or information on them
+   */
+  public void exportNumericAttributes(ObjectName beanNamePattern) throws JMException {
+<span class="fc" id="L102">    MBeanServer beanServer = ManagementFactory.getPlatformMBeanServer();</span>
+<span class="fc" id="L103">    Set&lt;ObjectName&gt; beanNames = beanServer.queryNames(beanNamePattern, null);</span>
+    
+    // Iterate through all beans and register their numeric properties with Stats
+<span class="fc bfc" id="L106" title="All 2 branches covered.">    for (ObjectName beanName : beanNames) {</span>
+<span class="fc" id="L107">      MBeanInfo beanInfo = beanServer.getMBeanInfo(beanName);</span>
+      
+      // Iterate through all bean attributes
+<span class="fc bfc" id="L110" title="All 2 branches covered.">      for (MBeanAttributeInfo attributeInfo : beanInfo.getAttributes()) {</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">        if (attributeInfo.isReadable()) {</span>
+          // Figure out the open type for the attribute
+<span class="fc" id="L113">          OpenType&lt;?&gt; openType = null;</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">          if (attributeInfo instanceof OpenMBeanAttributeInfo) {</span>
+<span class="fc" id="L115">            openType = ((OpenMBeanAttributeInfo) attributeInfo).getOpenType();</span>
+          } else {
+            // Sometimes the open mbean info is available in the descriptor
+<span class="fc" id="L118">            Object obj = attributeInfo.getDescriptor().getFieldValue(&quot;openType&quot;);</span>
+<span class="pc bpc" id="L119" title="2 of 4 branches missed.">            if (obj != null &amp;&amp; obj instanceof OpenType) {</span>
+<span class="fc" id="L120">              openType = (OpenType) obj;</span>
+            }
+          }
+          // once the open type is found, figure out if it's a numeric or composite type
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">          if (openType != null) {</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">            if (NUMERIC_TYPES.contains(openType)) {</span>
+              // numeric attribute types are registered with callbacks that simply 
+              // return their value 
+<span class="fc" id="L128">              addStatIfMatches(</span>
+                getStatName(beanName, attributeInfo.getName()),
+                new MBeanLongAttributeFetcher(beanServer, beanName, attributeInfo.getName())
+              );
+<span class="fc bfc" id="L132" title="All 2 branches covered.">            } else if (openType instanceof CompositeType) {</span>
+              // for composite types, we figure out which properties of the composite type 
+              // are numeric and register callbacks to fetch those composite type attributes
+<span class="fc" id="L135">              CompositeType compositeType = (CompositeType) openType;</span>
+              
+<span class="fc bfc" id="L137" title="All 2 branches covered.">              for (String key : compositeType.keySet()) {</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">                if (NUMERIC_TYPES.contains(compositeType.getType(key))) {</span>
+<span class="fc" id="L139">                  addStatIfMatches(</span>
+                    getStatName(beanName, attributeInfo.getName(), key),
+                    new MBeanLongCompositeValueFetcher(
+                      beanServer, beanName,
+                      attributeInfo.getName(), key
+                    )
+                  );
+                }
+<span class="fc" id="L147">              }</span>
+            }
+          }
+        }  
+      }
+<span class="fc" id="L152">    }</span>
+<span class="fc" id="L153">  }</span>
+
+  /**
+   * Adds the supplied stat if it matches the statName pattern.
+   * 
+   * @param statName the name of the stat
+   * @param fetcher the fetcher that can fetch the value of the stat at run time.
+   */
+  private void addStatIfMatches(String statName, Callable&lt;Long&gt; fetcher) {
+<span class="fc bfc" id="L162" title="All 2 branches covered.">    if (statNamePattern.matcher(statName).matches()) {</span>
+<span class="fc" id="L163">      stats.addDynamicCounter(statName, fetcher);</span>
+    }
+<span class="fc" id="L165">  }</span>
+
+  /**
+   * Returns a stat name for the given set of parameters.
+   * 
+   * @param beanName the MBean name to which the stat belongs
+   * @param attributeNames the mbean attribute name followed by any nested attribute names for
+   * composite types
+   * 
+   * @return the stat name
+   */
+  private static String getStatName(ObjectName beanName, String... attributeNames) {
+<span class="fc" id="L177">    StringBuilder builder = new StringBuilder(NAME_PREFIX);</span>
+<span class="fc" id="L178">    String value = beanName.getKeyProperty(&quot;type&quot;);</span>
+<span class="pc bpc" id="L179" title="1 of 2 branches missed.">    if (value != null) {</span>
+<span class="fc" id="L180">      builder.append('.').append(value);</span>
+    }
+<span class="fc" id="L182">    value = beanName.getKeyProperty(&quot;name&quot;);</span>
+<span class="fc bfc" id="L183" title="All 2 branches covered.">    if (value != null) {</span>
+<span class="fc" id="L184">      builder.append('.').append(value);</span>
+    }
+<span class="fc bfc" id="L186" title="All 2 branches covered.">    for (String attributeName : attributeNames) {</span>
+<span class="fc" id="L187">      builder.append('.').append(attributeName);</span>
+    }
+<span class="fc" id="L189">    return builder.toString().replace(' ', '_');</span>
+  }
+
+  /**
+   * A base class that fetches an mbean attribute value.
+   */
+  private static class MBeanAttributeFetcher {
+    private final MBeanServer mBeanServer;
+    private final ObjectName beanName;
+    private final String attribute;
+
+    protected MBeanAttributeFetcher(MBeanServer mBeanServer, 
+                                    ObjectName beanName, 
+<span class="fc" id="L202">                                    String attribute) {</span>
+<span class="fc" id="L203">      this.mBeanServer = mBeanServer;</span>
+<span class="fc" id="L204">      this.beanName = beanName;</span>
+<span class="fc" id="L205">      this.attribute = attribute;</span>
+<span class="fc" id="L206">    }</span>
+
+    protected Object getAttributeValue() throws Exception {
+<span class="fc" id="L209">      return mBeanServer.getAttribute(beanName, attribute);</span>
+    }
+  }
+
+  /**
+   * Fetches attribute value as long
+   */
+  private static class MBeanLongAttributeFetcher 
+    extends MBeanAttributeFetcher 
+    implements Callable&lt;Long&gt; {
+    private MBeanLongAttributeFetcher(
+        MBeanServer mBeanServer, ObjectName beanName, String attribute) {
+<span class="fc" id="L221">      super(mBeanServer, beanName, attribute);</span>
+<span class="fc" id="L222">    }</span>
+
+    @Override
+    public Long call() throws Exception {
+<span class="fc" id="L226">      Object obj = getAttributeValue();</span>
+<span class="pc bpc" id="L227" title="1 of 2 branches missed.">      if(obj instanceof Number) {</span>
+<span class="fc" id="L228">        return ((Number)obj).longValue();</span>
+      }
+<span class="nc" id="L230">      return -1l;</span>
+    }
+  }
+
+  /**
+   * Fetches an attribute of an mbean attribute that is of composite type.
+   */
+  private static class MBeanLongCompositeValueFetcher 
+      extends MBeanAttributeFetcher implements Callable&lt;Long&gt; {
+    private final String itemName;
+
+    private MBeanLongCompositeValueFetcher(
+        MBeanServer mBeanServer, ObjectName beanName, String attribute, String itemName) {
+<span class="fc" id="L243">      super(mBeanServer, beanName, attribute);</span>
+<span class="fc" id="L244">      this.itemName = itemName;</span>
+<span class="fc" id="L245">    }</span>
+
+    @Override
+    public Long call() throws Exception {
+<span class="fc" id="L249">      Object obj = getAttributeValue();</span>
+<span class="fc bfc" id="L250" title="All 2 branches covered.">      if(obj instanceof CompositeData) {</span>
+<span class="fc" id="L251">        obj = ((CompositeData)obj).get(itemName);</span>
+<span class="pc bpc" id="L252" title="1 of 2 branches missed.">        if (obj instanceof Number) {</span>
+<span class="fc" id="L253">          return ((Number)obj).longValue();</span>
+        }
+      }
+<span class="fc" id="L256">      return -1l;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

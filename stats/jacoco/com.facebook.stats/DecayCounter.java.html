@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DecayCounter.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">DecayCounter.java</span></div><h1>DecayCounter.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * special purpose counter that decays exponentially fashion.
+ * &lt;p/&gt;
+ * Note: all value is decayed as though it was added at the 'start' value.
+ * This is best used to decay the counter value once it has been fixed
+ */
+public class DecayCounter implements EventCounter {
+<span class="nc" id="L31">  private final AtomicLong count = new AtomicLong(0);</span>
+  private final ReadableDateTime start;
+  private final ReadableDateTime decayStart;
+  private final ReadableDateTime end;
+  private final float decayRatePerSecond;
+
+  /**
+   * @param start              start of the counter range
+   * @param decayStart         time from which to compute decay
+   * @param end                end of the counter range
+   * @param decayRatePerSecond ex, 0.05 =&gt; 5% decay per second
+   */
+  public DecayCounter(
+    ReadableDateTime start,
+    ReadableDateTime decayStart,
+    ReadableDateTime end, float decayRatePerSecond
+<span class="nc" id="L47">  ) {</span>
+<span class="nc" id="L48">    this.start = start;</span>
+<span class="nc" id="L49">    this.decayStart = decayStart;</span>
+<span class="nc" id="L50">    this.end = end;</span>
+<span class="nc" id="L51">    this.decayRatePerSecond = decayRatePerSecond;</span>
+<span class="nc" id="L52">  }</span>
+
+  public DecayCounter(
+    ReadableDateTime start, ReadableDateTime end, float decayRatePerSecond
+  ) {
+<span class="nc" id="L57">    this(start, start, end, decayRatePerSecond);</span>
+<span class="nc" id="L58">  }</span>
+
+  @Override
+  public void add(long delta) {
+<span class="nc" id="L62">    count.addAndGet(delta);</span>
+<span class="nc" id="L63">  }</span>
+
+  /**
+   * @return counter value after computing exponential decay of the counter
+   *         value
+   */
+  @Override
+  public long getValue() {
+<span class="nc" id="L71">    DateTime now = getNow();</span>
+
+    // don't start decay unless it's at least 1s after the decayStart
+<span class="nc bnc" id="L74" title="All 2 branches missed.">    if (now.isAfter(decayStart.toDateTime().plusSeconds(1))) {</span>
+<span class="nc" id="L75">      Duration elapsed = new Duration(decayStart, now);</span>
+<span class="nc" id="L76">      long millis = elapsed.getMillis();</span>
+
+      // compute total decay for millis / 1000 seconds
+<span class="nc" id="L79">      double thisDecay =</span>
+        Math.pow(1.0 - decayRatePerSecond, (double) (millis / (double) 1000));
+
+<span class="nc" id="L82">      return (long) (count.get() * thisDecay);</span>
+    } else {
+<span class="nc" id="L84">      return count.get();</span>
+    }
+  }
+
+  @Override
+  public ReadableDateTime getStart() {
+<span class="nc" id="L90">    return start;</span>
+  }
+
+  @Override
+  public ReadableDateTime getEnd() {
+<span class="nc" id="L95">    return end;</span>
+  }
+
+  @Override
+  public Duration getLength() {
+<span class="nc" id="L100">    return new Duration(start, end);</span>
+  }
+
+  /**
+   * creates a merged counter with our decayed value + the other counter's
+   * value.  This will be a DecayCounter with a decayStart of getNow()
+   * and a range that spans the extend of both
+   *
+   * @param counter : any EventCounter
+   * @return
+   */
+  @Override
+  public EventCounter merge(EventCounter counter) {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    ReadableDateTime mergedStart =</span>
+      start.isBefore(counter.getStart()) ? start : counter.getStart();
+<span class="nc bnc" id="L115" title="All 2 branches missed.">    ReadableDateTime mergedEnd =</span>
+      end.isAfter(counter.getEnd()) ? end : counter.getEnd();
+<span class="nc" id="L117">    DateTime now = getNow();</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    DecayCounter mergedCounter = new DecayCounter(</span>
+      mergedStart,
+      now.isAfter(decayStart) ? now : decayStart,
+      mergedEnd,
+      decayRatePerSecond
+    );
+
+<span class="nc" id="L125">    mergedCounter.add(getValue());</span>
+<span class="nc" id="L126">    mergedCounter.add(counter.getValue());</span>
+
+<span class="nc" id="L128">    return mergedCounter;</span>
+  }
+
+  DateTime getNow() {
+<span class="nc" id="L132">    return new DateTime();</span>
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

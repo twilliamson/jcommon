@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShardedConcurrentCounter.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">ShardedConcurrentCounter.java</span></div><h1>ShardedConcurrentCounter.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTimeUtils;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+public class ShardedConcurrentCounter {
+  // this seemed to help maybe 10-15% by 
+<span class="nc" id="L24">  private static int MEMORY_WORD_MULTIPLIER = 1;</span>
+  
+<span class="nc" id="L26">  private volatile long value = 0;</span>
+  private final long maxStaleMillis;
+<span class="nc" id="L28">  private volatile long globalLastDrainMillis = </span>
+    DateTimeUtils.currentTimeMillis();
+  private final CounterShard[] counterShards;
+
+<span class="nc" id="L32">  public ShardedConcurrentCounter(int numShards, long maxStaleMillis) {</span>
+<span class="nc" id="L33">    this.maxStaleMillis = maxStaleMillis;</span>
+<span class="nc" id="L34">    counterShards = new CounterShard[MEMORY_WORD_MULTIPLIER*numShards];</span>
+    
+<span class="nc" id="L36">    long now = DateTimeUtils.currentTimeMillis();</span>
+<span class="nc" id="L37">    long staggerMillis = maxStaleMillis / numShards;</span>
+    
+<span class="nc bnc" id="L39" title="All 2 branches missed.">    for (int i = 0; i &lt; MEMORY_WORD_MULTIPLIER*numShards; i++) {</span>
+<span class="nc" id="L40">      long firstDrainMillis = now + (i * staggerMillis);</span>
+      
+      // TODO: figure out if 1.5 make sense here?
+<span class="nc" id="L43">      counterShards[i] = </span>
+        new CounterShard(firstDrainMillis, (long)(1.5 * maxStaleMillis));
+    }
+<span class="nc" id="L46">  }</span>
+
+  public ShardedConcurrentCounter() {
+<span class="nc" id="L49">    this(16, 500);</span>
+<span class="nc" id="L50">  }</span>
+
+  public void add(long delta) {
+<span class="nc" id="L53">    counterShards[getShard()].add(delta);</span>
+<span class="nc" id="L54">  }</span>
+
+  private int getShard() {
+<span class="nc" id="L57">    return MEMORY_WORD_MULTIPLIER*(int)Thread.currentThread().getId() % </span>
+      counterShards.length;
+  }
+
+
+  public long get() {
+<span class="nc" id="L63">    drainThreadToShared();</span>
+    
+<span class="nc" id="L65">    return value;</span>
+  }
+  
+  public long getStale() {
+<span class="nc" id="L69">    return value;</span>
+  }
+  
+  // TODO: possibly expose this publicly?
+  private void updateIfStale() {
+<span class="nc bnc" id="L74" title="All 2 branches missed.">    if (DateTimeUtils.currentTimeMillis() - globalLastDrainMillis &gt;= maxStaleMillis) {</span>
+<span class="nc" id="L75">      synchronized (counterShards) {</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (DateTimeUtils.currentTimeMillis() - globalLastDrainMillis &gt;= </span>
+          maxStaleMillis
+          ) {
+<span class="nc" id="L79">          drainThreadToShared();</span>
+<span class="nc" id="L80">          globalLastDrainMillis = DateTimeUtils.currentTimeMillis();</span>
+        }
+<span class="nc" id="L82">      }</span>
+    }
+<span class="nc" id="L84">  }</span>
+
+  private void drainThreadToShared() {
+<span class="nc" id="L87">    synchronized (counterShards) {</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">      for (CounterShard counterShard : counterShards) {</span>
+<span class="nc" id="L89">        value += counterShard.drain();</span>
+      }
+<span class="nc" id="L91">    }</span>
+<span class="nc" id="L92">  }</span>
+  
+  private class CounterShard {
+    private final long frequencyMillis;
+<span class="nc" id="L96">    private final AtomicLong counter = new AtomicLong(0);</span>
+    private volatile long lastDrainMillis;
+
+<span class="nc" id="L99">    private CounterShard(long firstDrainMillis, long frequencyMillis) {</span>
+<span class="nc" id="L100">      lastDrainMillis = firstDrainMillis;</span>
+<span class="nc" id="L101">      this.frequencyMillis = frequencyMillis;</span>
+<span class="nc" id="L102">    }</span>
+
+    private void add(long delta) {
+<span class="nc bnc" id="L105" title="All 2 branches missed.">      if (DateTimeUtils.currentTimeMillis() - lastDrainMillis &gt;= frequencyMillis) {</span>
+<span class="nc" id="L106">        drainThreadToShared();</span>
+<span class="nc" id="L107">        lastDrainMillis = DateTimeUtils.currentTimeMillis();</span>
+      }
+      
+<span class="nc" id="L110">      counter.addAndGet(delta);</span>
+<span class="nc" id="L111">    }</span>
+
+    private long drain() {
+<span class="nc" id="L114">      return counter.getAndSet(0);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
