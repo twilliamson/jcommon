@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>LongArray.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">LongArray.java</span></div><h1>LongArray.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.ThreadSafe;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+import static com.google.common.base.Preconditions.checkState;
+
+/**
+ * Reference implementation of SimpleArray using longs. Attempts to limit memory growth
+ * by allowing a small growth factor each resize
+ *
+ */
+@ThreadSafe
+public class LongArray implements Array&lt;Long&gt; {
+  private static final int DEFAULT_INITIAL_CAPACITY = 3;
+  // memory conservative growth amount here
+  private static final double MIN_GROWTH_FACTOR = 0.3;
+  private static final int MIN_GROWTH_AMOUNT = 8; // intel xeon cache line size is 64 bytes
+  private static final long EMPTY = -1;
+
+  private long[] data;
+<span class="fc" id="L41">  private volatile int nextWritePosition = 0;</span>
+<span class="fc" id="L42">  private volatile int size = 0;</span>
+
+<span class="fc" id="L44">  public LongArray(int initialCapacity) {</span>
+<span class="fc" id="L45">    data = new long[initialCapacity];</span>
+<span class="fc" id="L46">    Arrays.fill(data, EMPTY);</span>
+<span class="fc" id="L47">  }</span>
+
+  public LongArray() {
+<span class="fc" id="L50">    this(DEFAULT_INITIAL_CAPACITY);</span>
+<span class="fc" id="L51">  }</span>
+
+  @Override
+  public synchronized Long get(int i) throws IndexOutOfBoundsException {
+<span class="fc bfc" id="L55" title="All 2 branches covered.">    if (i &gt;= size()) {</span>
+<span class="fc" id="L56">      throw new ArrayIndexOutOfBoundsException();</span>
+    }
+    // return null if the slot is empty
+<span class="fc bfc" id="L59" title="All 2 branches covered.">    return data[i] &gt;= 0 ? data[i] : null;</span>
+  }
+
+  @Override
+  public int size() {
+<span class="fc" id="L64">    return size;</span>
+  }
+
+  @Override
+  public synchronized int capacity() {
+<span class="fc" id="L69">    return data.length;</span>
+  }
+
+  @Override
+  public Long set(int i, Long value) throws ArrayIndexOutOfBoundsException {
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L75">      throw new NullPointerException(&quot;null values not allowed&quot;);</span>
+    }
+
+<span class="fc" id="L78">    synchronized (this) {</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">      if (i &gt;= data.length) {</span>
+<span class="fc" id="L80">        throw new ArrayIndexOutOfBoundsException(</span>
+          String.format(&quot;tried to set value at index %d, but  max index is %d&quot;, i, data.length - 1)
+        );
+      }
+
+<span class="fc" id="L85">      Long oldValue = data[i];</span>
+
+<span class="fc" id="L87">      data[i] = value;</span>
+
+<span class="fc bfc" id="L89" title="All 2 branches covered.">      if (oldValue == EMPTY) {</span>
+<span class="fc" id="L90">        size++;</span>
+      }
+
+<span class="fc" id="L93">      return oldValue;</span>
+<span class="fc" id="L94">    }</span>
+  }
+
+  @Override
+  public synchronized int append(Long value) {
+    int myWritePosition;
+
+<span class="fc bfc" id="L101" title="All 2 branches covered.">    if (nextWritePosition &gt;= data.length) {</span>
+<span class="fc" id="L102">      int sizeIncrease = (int) (data.length * MIN_GROWTH_FACTOR);</span>
+
+<span class="fc" id="L104">      sizeIncrease = Math.max(sizeIncrease, MIN_GROWTH_AMOUNT);</span>
+
+<span class="fc" id="L106">      internalResize(data.length + sizeIncrease);</span>
+    }
+
+    // find an empty slot if the current one isn't (may have been set by set(int i, Long value)
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">    while (!isEmpty(nextWritePosition)) {</span>
+<span class="nc" id="L111">      nextWritePosition++;</span>
+
+<span class="nc bnc" id="L113" title="All 2 branches missed.">      if (nextWritePosition &gt;= data.length - 1) {</span>
+        // resize in advance for next write
+<span class="nc" id="L115">        resize(data.length + MIN_GROWTH_AMOUNT);</span>
+      }
+    }
+
+<span class="pc bpc" id="L119" title="2 of 4 branches missed.">    checkState(isEmpty(nextWritePosition) &amp;&amp; nextWritePosition &lt; data.length);</span>
+
+<span class="fc" id="L121">    myWritePosition = nextWritePosition;</span>
+    // prepare for next write
+<span class="fc" id="L123">    nextWritePosition++;</span>
+<span class="fc" id="L124">    size++;</span>
+<span class="fc" id="L125">    data[myWritePosition] = value;</span>
+
+<span class="fc" id="L127">    return myWritePosition;</span>
+  }
+
+  @Override
+  public synchronized Long remove(int i) throws ArrayIndexOutOfBoundsException {
+<span class="pc bpc" id="L132" title="1 of 2 branches missed.">    if (isEmpty(i)) {</span>
+<span class="nc" id="L133">      return null;</span>
+    } else {
+<span class="fc" id="L135">      Long previousValue = data[i];</span>
+
+<span class="fc" id="L137">      data[i] = EMPTY;</span>
+<span class="fc" id="L138">      size--;</span>
+
+<span class="fc" id="L140">      return convertValue(previousValue);</span>
+    }
+  }
+
+  @Override
+  public int resize(int sizeHint) {
+<span class="nc" id="L146">    return internalResize(sizeHint);</span>
+  }
+
+  /**
+   * @param sizeHint effectively the new size (NOT the increase). May be changed for memory or
+   *                 cache alignments as implementations see fit
+   * @return actual new size
+   */
+  private synchronized int internalResize(int sizeHint) {
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">    Preconditions.checkArgument(sizeHint &gt; 0, &quot;sizeHint must be &gt; 0&quot;);</span>
+
+    // we can use the sizeHint directly. Cases we wouldn't would be to align the array on
+    // word boundaries and not waste space (ex: int arrays always even sized, etc. We could even
+    // use cache line boundaries to maximize the chance of cache write hits (believed 64 bytes
+    // on our Xeon L5520 processors &quot;cache_alignment : 64&quot;)
+<span class="fc" id="L161">    int newSize = sizeHint;</span>
+
+<span class="fc" id="L163">    long[] newData = new long[newSize];</span>
+
+<span class="fc" id="L165">    System.arraycopy(data, 0, newData, 0, data.length);</span>
+<span class="fc" id="L166">    Arrays.fill(newData, data.length, newData.length, EMPTY);</span>
+<span class="fc" id="L167">    data = newData;</span>
+
+<span class="fc" id="L169">    return newSize;</span>
+  }
+
+  /**
+   * @return
+   */
+  @Override
+  public Iterator&lt;Long&gt; iterator() {
+<span class="fc" id="L177">    return new Iter();</span>
+  }
+
+  /**
+   * since the contract to clients is that null =&gt; empty slot, we convert our empty indicators
+   * to null here
+   *
+   * @param value input from data
+   * @return input if &gt;= 0, else null
+   */
+  private Long convertValue(long value) {
+<span class="fc bfc" id="L188" title="All 2 branches covered.">    return value &gt;= 0 ? value : null;</span>
+  }
+
+  private boolean isEmpty(int position) {
+<span class="fc bfc" id="L192" title="All 2 branches covered.">    return data[position] &lt; 0;</span>
+  }
+
+  /**
+   * Thread safe iterator. Note: at the moment the iterator is created, sizeSnapshot elements exist
+   * in the array. It will terminate upon seeing the first sizeSnapshot elements, or when position
+   * is &gt;= capacitySnapshot. This means fewer elements or different elements may be seen, but
+   * so goes the life of concurrent data structure access
+   * &lt;p/&gt;
+   * It also supports remove, but again, note that this may not have the intended effect if the
+   * underlying array is resized. Prefer directly removing an element with
+   * {@link #LongSimpleArray.remove(int i)}
+   */
+<span class="fc" id="L205">  private class Iter implements Iterator&lt;Long&gt; {</span>
+    // index to iterate through the array.
+<span class="fc" id="L207">    private int position = 0;</span>
+    // -2 is no read called yet, -1 means remove was calledon this position
+<span class="fc" id="L209">    private int lastReadPosition = -2;</span>
+<span class="fc" id="L210">    private int numSeen = 0;</span>
+<span class="fc" id="L211">    private long sizeSnapshot = size;</span>
+<span class="fc" id="L212">    private int capacitySnapshot = data.length;</span>
+<span class="fc" id="L213">    private Long nextValue = null;</span>
+    // indicates if we've read the next value
+<span class="fc" id="L215">    private boolean readNextValue = false;</span>
+    // indicates if last read attemp found a value
+<span class="fc" id="L217">    private boolean hasNextValue = false;</span>
+
+    @Override
+    public boolean hasNext() {
+<span class="fc" id="L221">      synchronized (LongArray.this) {</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        if (readNextValue) {</span>
+<span class="fc" id="L223">          return hasNextValue;</span>
+        }
+
+<span class="pc bpc" id="L226" title="2 of 4 branches missed.">        boolean retVal = numSeen &lt; sizeSnapshot &amp;&amp; position &lt; capacitySnapshot;</span>
+
+        // this loop finds the next non-null value, or due to concurrent changes, it may simply
+        // terminate if it iterates over the entire capacity of the array w/o finding sizeSnapshot
+        // elements
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        while (retVal) {</span>
+<span class="fc" id="L232">          nextValue = convertValue(data[position]);</span>
+
+<span class="fc bfc" id="L234" title="All 2 branches covered.">          if (nextValue != null) {</span>
+<span class="fc" id="L235">            break;</span>
+          }
+
+<span class="fc" id="L238">          position++;</span>
+          // since deletions could occur, hitting the end of capacity before the size is possible
+<span class="pc bpc" id="L240" title="1 of 4 branches missed.">          retVal = numSeen &lt; sizeSnapshot &amp;&amp; position &lt; capacitySnapshot;</span>
+        }
+
+<span class="fc bfc" id="L243" title="All 2 branches covered.">        if (retVal) {</span>
+<span class="fc" id="L244">          lastReadPosition = position;</span>
+        }
+
+<span class="fc" id="L247">        readNextValue = true;</span>
+<span class="fc" id="L248">        hasNextValue = retVal;</span>
+
+<span class="fc" id="L250">        return retVal;</span>
+<span class="nc" id="L251">      }</span>
+    }
+
+    @Override
+    public Long next() {
+<span class="fc" id="L256">      synchronized (LongArray.this) {</span>
+<span class="pc bpc" id="L257" title="1 of 2 branches missed.">        if (!hasNext()) {</span>
+<span class="nc" id="L258">          throw new NoSuchElementException();</span>
+        }
+
+<span class="fc" id="L261">        readNextValue = false;</span>
+<span class="fc" id="L262">        position++;</span>
+
+<span class="fc" id="L264">        return nextValue;</span>
+<span class="nc" id="L265">      }</span>
+    }
+
+    @Override
+    public void remove() {
+<span class="fc" id="L270">      synchronized (LongArray.this) {</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">        if (lastReadPosition == -2) {</span>
+<span class="fc" id="L272">          throw new IllegalStateException(&quot;next() has not been called yet&quot;);</span>
+        }
+<span class="fc bfc" id="L274" title="All 2 branches covered.">        if (lastReadPosition == -1) {</span>
+<span class="fc" id="L275">          throw new IllegalStateException(&quot;remove already called for this position&quot;);</span>
+        }
+
+<span class="fc" id="L278">        data[lastReadPosition] = EMPTY;</span>
+<span class="fc" id="L279">        size--;</span>
+<span class="fc" id="L280">        lastReadPosition = -1;</span>
+<span class="fc" id="L281">      }</span>
+<span class="fc" id="L282">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CounterMap.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">CounterMap.java</span></div><h1>CounterMap.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import com.facebook.collectionsbase.Mapper;
+import com.google.common.collect.Iterators;
+
+import java.util.AbstractMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * maps keys of type K to a long.  Thread-safe and cleans up keys when
+ * the count reaches 0
+ *
+ * @param &lt;K&gt; key type for the map
+ */
+<span class="fc" id="L37">public class CounterMap&lt;K&gt; implements Iterable&lt;Map.Entry&lt;K, Long&gt;&gt; {</span>
+<span class="fc" id="L38">  private static final AtomicLong ZERO = new AtomicLong(0);</span>
+
+<span class="fc" id="L40">  private final ConcurrentMap&lt;K, AtomicLong&gt; counters =</span>
+    new ConcurrentHashMap&lt;K, AtomicLong&gt;();
+<span class="fc" id="L42">  private final ReadWriteLock removalLock = new ReentrantReadWriteLock();</span>
+
+  /**
+   * adds a value to key; will create a counter if it doesn't exist already.
+   * conversely, since 0 is the value returned for keys not present, if the
+   * counter value reaches 0, it is removed
+   *
+   * @param key - key to add the delta to
+   * @param delta - positive/negative amount to increment a counter
+   * @return the new value after updating
+   */
+  public long addAndGet(K key, long delta) {
+    long retVal;
+    // ensure that no key is removed while we are updating the counter
+<span class="fc" id="L56">    removalLock.readLock().lock();</span>
+    try {
+<span class="fc" id="L58">      retVal = getCounter(key).addAndGet(delta);</span>
+    } finally {
+<span class="pc" id="L60">      removalLock.readLock().unlock();</span>
+<span class="fc" id="L61">    }</span>
+
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">    if (retVal == 0) {</span>
+<span class="nc" id="L64">      tryCleanup(key);</span>
+    }
+
+<span class="fc" id="L67">    return retVal;</span>
+  }
+
+  /**
+   * adds a value to key; will create a counter if it doesn't exist already.
+   * conversely, since 0 is the value returned for keys not present, if the
+   * counter value reaches 0, it is removed
+   *
+   * @param key - key to add the delta to
+   * @param delta - positive/negative amount to increment a counter
+   * @return the old value before updating
+   */
+  public long getAndAdd(K key, long delta) {
+    long retVal;
+    // ensure that no key is removed while we are updating the counter
+<span class="nc" id="L82">    removalLock.readLock().lock();</span>
+    try {
+<span class="nc" id="L84">      retVal = getCounter(key).getAndAdd(delta);</span>
+    } finally {
+<span class="nc" id="L86">      removalLock.readLock().unlock();</span>
+<span class="nc" id="L87">    }</span>
+
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (retVal + delta == 0) {</span>
+<span class="nc" id="L90">      tryCleanup(key);</span>
+    }
+
+<span class="nc" id="L93">    return retVal;</span>
+  }
+
+  private AtomicLong getCounter(K key) {
+<span class="fc" id="L97">    AtomicLong counter = counters.get(key);</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">    if (counter == null) {</span>
+<span class="fc" id="L99">      AtomicLong newCounter = new AtomicLong(0);</span>
+<span class="fc" id="L100">      AtomicLong oldCounter = counters.putIfAbsent(key, newCounter);</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">      counter = (oldCounter == null) ? newCounter : oldCounter;</span>
+    }
+<span class="fc" id="L103">    return counter;</span>
+  }
+
+  private void tryCleanup(K key) {
+<span class="nc" id="L107">    removalLock.writeLock().lock();</span>
+    try {
+<span class="nc" id="L109">      counters.remove(key, ZERO);</span>
+    } finally {
+<span class="nc" id="L111">      removalLock.writeLock().unlock();</span>
+<span class="nc" id="L112">    }</span>
+<span class="nc" id="L113">  }</span>
+
+  /**
+   *
+   * @param key
+   * @return value removed if present, null otherwise
+   */
+  public AtomicLong remove(K key) {
+    // no locking, this is an unconditional remove
+<span class="nc" id="L122">    return counters.remove(key);</span>
+  }
+
+  /**
+   *
+   * @param key
+   * @return value of a counter.  Returns 0 if not present
+   */
+  public long get(K key) {
+<span class="fc" id="L131">    AtomicLong counter = counters.get(key);</span>
+
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">    if (counter == null) {</span>
+<span class="nc" id="L134">      return 0;</span>
+    }
+
+<span class="fc" id="L137">    return counter.get();</span>
+  }
+
+  @Override
+  public Iterator&lt;Map.Entry&lt;K, Long&gt;&gt; iterator() {
+<span class="nc" id="L142">    return Iterators.unmodifiableIterator(</span>
+      new TranslatingIterator&lt;Map.Entry&lt;K, AtomicLong&gt;, Map.Entry&lt;K, Long&gt;&gt;(
+<span class="nc" id="L144">        new Mapper&lt;Entry&lt;K, AtomicLong&gt;, Entry&lt;K, Long&gt;&gt;() {</span>
+          @Override
+          public Map.Entry&lt;K, Long&gt; map(Map.Entry&lt;K, AtomicLong&gt; input) {
+<span class="nc" id="L147">            return new AbstractMap.SimpleImmutableEntry&lt;K, Long&gt;(</span>
+              input.getKey(), input.getValue().get()
+            );
+          }
+        },
+        counters.entrySet().iterator()
+      )
+    );
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
