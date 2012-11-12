@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkQuickConnection.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.convenience</a> &gt; <span class="el_source">ZkQuickConnection.java</span></div><h1>ZkQuickConnection.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.convenience;
+
+import com.facebook.zookeeper.BasicZooKeeperFactory;
+import com.facebook.zookeeper.ZooKeeperFactory;
+import com.facebook.zookeeper.ZooKeeperIface;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+
+import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+public class ZkQuickConnection {
+  private final ZooKeeperIface zk;
+
+  private ZkQuickConnection(
+    ZooKeeperFactory zooKeeperFactory,
+    int connectionTimeoutMillis
+<span class="nc" id="L35">  ) throws IOException, InterruptedException, TimeoutException {</span>
+<span class="nc" id="L36">    final CountDownLatch latch = new CountDownLatch(1);</span>
+<span class="nc" id="L37">    zk = zooKeeperFactory.create(new Watcher() {</span>
+      @Override
+      public void process(WatchedEvent event) {
+<span class="nc bnc" id="L40" title="All 2 branches missed.">        if (event.getState() == Watcher.Event.KeeperState.SyncConnected) {</span>
+<span class="nc" id="L41">          latch.countDown();</span>
+        }
+<span class="nc" id="L43">      }</span>
+    });
+<span class="nc bnc" id="L45" title="All 2 branches missed.">    if (!latch.await(connectionTimeoutMillis, TimeUnit.MILLISECONDS)) {</span>
+<span class="nc" id="L46">      zk.close();</span>
+<span class="nc" id="L47">      throw new TimeoutException(&quot;Failed to connect to ZooKeeper&quot;);</span>
+    }
+<span class="nc" id="L49">  }</span>
+
+  public ZkQuickConnection(
+    String server, int zkTimeoutMillis, int connectTimeoutMillis
+  ) throws IOException, InterruptedException, TimeoutException {
+<span class="nc" id="L54">    this(</span>
+      new BasicZooKeeperFactory(server, zkTimeoutMillis),
+      connectTimeoutMillis
+    );
+<span class="nc" id="L58">  }</span>
+
+  public ZkQuickConnection(
+    String server, int zkTimeoutMillis
+  ) throws IOException, InterruptedException, TimeoutException {
+<span class="nc" id="L63">    this(server, zkTimeoutMillis, 10000);</span>
+<span class="nc" id="L64">  }</span>
+
+  public ZooKeeperIface getZk() {
+<span class="nc" id="L67">    return zk;</span>
+  }
+
+  public void close() throws InterruptedException {
+<span class="nc" id="L71">    zk.close();</span>
+<span class="nc" id="L72">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

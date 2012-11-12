@@ -1,0 +1,575 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkApplication.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.app</a> &gt; <span class="el_source">ZkApplication.java</span></div><h1>ZkApplication.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.app;
+
+import com.facebook.concurrency.ErrorLoggingRunnable;
+import com.facebook.concurrency.NamedThreadFactory;
+import com.facebook.zookeeper.connection.ZkConnectionManager;
+import org.apache.log4j.Logger;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooKeeper;
+
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * ZkApplication is an abstract base class that provides a template-and-hook
+ * style ZooKeeper state management framework.
+ *
+ * Features:
+ * - Automatic connection and reconnection to ZooKeeper on disconnects and
+ *   expirations.
+ * - Issues initialize(), repair(), and expire() callbacks to the application
+ *   as various connection events occur.
+ * - Models application state with a finite state machine. States are queryable
+ *   from subclasses.
+ *
+ * =============================== STATES ===============================
+ *
+ * PRESTART:
+ * This is the application's initial state before the user issues a start()
+ * command to begin the application
+ *
+ * DISCONNECTED:
+ * Application is not connected to ZooKeeper and does not have any
+ * application state set in ZooKeeper (e.g. watches or ephemeral nodes).
+ * Entry to this state automatically triggers a connection loop that retries
+ * until successful.
+ *
+ * CONNECTED:
+ * Application is connected to ZooKeeper, but application state in ZooKeeper
+ * has not been fully initialized. Entry to this state automatically triggers
+ * callbacks to the initialize() abstract method, looping until initialize()
+ * returns true.
+ *
+ * FUNCTIONAL:
+ * Application is connected to ZooKeeper and has full application state
+ * initialized in ZooKeeper. At this point the application should be fully
+ * functioning.
+ *
+ * SAFEMODE:
+ * Application was successfully initialized, but became disconnected. Since
+ * many applications will cache ZooKeeper state, this state signifies a
+ * cache read-only mode where ZooKeeper is unavailable. Entry to this
+ * state will automatically trigger a connection loop that retries until
+ * reconnected, or until the session expires.
+ *
+ * SAFEMODE_REPAIR:
+ * Application in safemode was successfully reconnected to ZooKeeper without
+ * expiration. Entry to this state will automatically trigger callbacks to the
+ * repair() abstract method, looping until repair() returns true. While
+ * initialize() and repair() may do the same things, we make this distinction
+ * as it is often possible to optimize the repair method to only repeat failed
+ * commands.
+ *
+ * SHUTDOWN:
+ * Application has been shut down by the user via the shutdown() method.
+ *
+ * ======================= STATE TRANSITION DIAGRAM =====================
+ *
+ * The state transition diagram appears as follows:
+ *
+ *                  PRESTART     (expire*)
+ *                     | (start)    |
+ *                     v            |      
+ *                DISCONNECTED &lt;----       --&gt;  SAFEMODE
+ *                     | (connect)        /        | (connect)
+ *                     v                 /         v
+ *                 CONNECTED    (dc'ed) /    SAFEMODE_REPAIR
+ *                       \             /          /
+ *                        \           /          /
+ *                 (init)  \         /          / (repair)
+ *                          \       /          /
+ *                           v     /          /
+ *                          FUNCTIONAL &lt;-----
+ *
+ *
+ *                  (shutdown*) -----&gt; SHUTDOWN
+ *
+ * NOTE: '*' denotes an event that unconditionally leads to a specific state,
+ * regardles of the pre-existing state.
+ */
+public abstract class ZkApplication {
+<span class="nc" id="L112">  private static final Logger APP_LOG = Logger.getLogger(ZkApplication.class);</span>
+  
+  protected final ZkConnectionManager zkConnectionManager;
+  private final ExecutorService watchExecutor;
+  private final ScheduledExecutorService retryExecutor;
+  private final long retryIntervalMillis;
+<span class="nc" id="L118">  private final CountDownLatch initLatch = new CountDownLatch(1);</span>
+<span class="nc" id="L119">  private final StateContext context = new StateContext();</span>
+<span class="nc" id="L120">  private volatile boolean isStarted = false;</span>
+
+<span class="nc" id="L122">  public enum State {</span>
+<span class="nc" id="L123">    PRESTART,</span>
+<span class="nc" id="L124">    DISCONNECTED,</span>
+<span class="nc" id="L125">    CONNECTED,</span>
+<span class="nc" id="L126">    FUNCTIONAL,</span>
+<span class="nc" id="L127">    SAFEMODE,</span>
+<span class="nc" id="L128">    SAFEMODE_REPAIR,</span>
+<span class="nc" id="L129">    SHUTDOWN,</span>
+  }
+
+  // This constructor only exposes the executors for unit testing purposes
+  protected ZkApplication(
+    ZkConnectionManager zkConnectionManager,
+    long retryIntervalMillis,
+    ExecutorService watchExecutor,
+    ScheduledExecutorService retryExecutor
+<span class="nc" id="L138">  ) {</span>
+<span class="nc" id="L139">    this.zkConnectionManager = zkConnectionManager;</span>
+<span class="nc" id="L140">    this.retryIntervalMillis = retryIntervalMillis;</span>
+<span class="nc" id="L141">    this.watchExecutor = watchExecutor;</span>
+<span class="nc" id="L142">    this.retryExecutor = retryExecutor;</span>
+<span class="nc" id="L143">  }</span>
+
+  protected ZkApplication(
+    ZkConnectionManager zkConnectionManager, long retryIntervalMillis
+  ) {
+<span class="nc" id="L148">    this(</span>
+      zkConnectionManager,
+      retryIntervalMillis,
+      Executors.newSingleThreadExecutor(
+        new NamedThreadFactory(&quot;ZkApplication-watch&quot;)
+      ),
+      Executors.newSingleThreadScheduledExecutor(
+        new NamedThreadFactory(&quot;ZkApplication-retry&quot;)
+      )
+    );
+<span class="nc" id="L158">  }</span>
+
+  protected ZkApplication(ZkConnectionManager zkConnectionManager) {
+<span class="nc" id="L161">    this(zkConnectionManager, 2000);</span>
+<span class="nc" id="L162">  }</span>
+
+  // Instance must be started before it becomes valid for use
+  public synchronized void start() {
+<span class="nc bnc" id="L166" title="All 2 branches missed.">    if (isStarted) {</span>
+<span class="nc" id="L167">      throw new IllegalStateException(&quot;Should only be started once&quot;);</span>
+    }
+<span class="nc" id="L169">    ZooKeeper.States zkState =</span>
+      zkConnectionManager.registerWatcher(new ConnectionWatcher());
+    // Synchronize our application state with ZooKeeper state
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    context.start((zkState == ZooKeeper.States.CONNECTED)</span>
+      ? State.CONNECTED
+      : State.DISCONNECTED
+    );
+<span class="nc" id="L176">    isStarted = true;</span>
+    // Allow watch signals to pass only after initialization
+<span class="nc" id="L178">    initLatch.countDown();</span>
+<span class="nc" id="L179">  }</span>
+
+  public boolean isFunctional() {
+<span class="nc bnc" id="L182" title="All 2 branches missed.">    return context.getState() == State.FUNCTIONAL;</span>
+  }
+
+  public boolean isSafeMode() {
+<span class="nc bnc" id="L186" title="All 4 branches missed.">    return context.getState() == State.SAFEMODE ||</span>
+      context.getState() == State.SAFEMODE_REPAIR;
+  }
+
+  public boolean isShutdown() {
+<span class="nc bnc" id="L191" title="All 2 branches missed.">    return context.getState() == State.SHUTDOWN;</span>
+  }
+
+  public synchronized void shutdown() {
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    if (!isStarted) {</span>
+<span class="nc" id="L196">      throw new IllegalStateException(&quot;Application not yet started&quot;);</span>
+    }
+<span class="nc" id="L198">    context.shutdown();</span>
+<span class="nc" id="L199">    watchExecutor.shutdown();</span>
+<span class="nc" id="L200">    retryExecutor.shutdown();</span>
+<span class="nc" id="L201">  }</span>
+
+  // Derived classes need to provide implementations for the following methods:
+
+  /**
+   * Initializes the application such that it is fully functioning.
+   * Implementations should be idempotent, and will be retried repeatedly
+   * until it succeeds.
+   * @return true if successfully initialized, false otherwise
+   */
+  protected abstract boolean initialize();
+
+  /**
+   * Repair the application state to a fully functioning state following
+   * a ZooKeeper disconnect. Implementations should be idempotent, and will
+   * be retried repeatedly until it succeeds.
+   * @return true if successfully repaired, false otherwise
+   */
+  protected abstract boolean repair();
+
+  /**
+   * Cleans up application state as necessary following a ZooKeeper session
+   * expiration. Implementations should be idempotent.
+   */
+  protected abstract void expire();
+
+
+  // Internal helper classes
+
+<span class="nc" id="L230">  private class ConnectionWatcher implements Watcher {</span>
+    @Override
+    public void process(final WatchedEvent event) {
+<span class="nc" id="L233">      watchExecutor.execute(new ErrorLoggingRunnable(new Runnable() {</span>
+        @Override
+        public void run() {
+          try {
+<span class="nc" id="L237">            initLatch.await(); // Wait until we have been fully initialized</span>
+<span class="nc" id="L238">          } catch (InterruptedException e) {</span>
+<span class="nc" id="L239">            APP_LOG.error(&quot;Init latch interrupted, continuing...&quot;);</span>
+<span class="nc" id="L240">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L241">          }</span>
+<span class="nc" id="L242">          context.handleEvent(event.getState());</span>
+<span class="nc" id="L243">        }</span>
+      }));
+<span class="nc" id="L245">    }</span>
+  }
+
+  private interface StateHandler {
+    void handleEvent(Watcher.Event.KeeperState event);
+    void inboundHook();
+    void outboundHook();
+  }
+
+  private class StateContext {
+<span class="nc" id="L255">    private volatile State state = State.PRESTART;</span>
+<span class="nc" id="L256">    private final Object transitionLock = new Object();</span>
+<span class="nc" id="L257">    private final Map&lt;State, StateHandler&gt; handlerCache =</span>
+      new EnumMap&lt;State, StateHandler&gt;(State.class);
+
+<span class="nc" id="L260">    private StateContext() {</span>
+      // Should be one entry per possible state
+<span class="nc" id="L262">      handlerCache.put(State.PRESTART, new PreStartStateHandler());</span>
+<span class="nc" id="L263">      handlerCache.put(State.DISCONNECTED, new DisconnectedStateHandler());</span>
+<span class="nc" id="L264">      handlerCache.put(State.CONNECTED, new ConnectedStateHandler());</span>
+<span class="nc" id="L265">      handlerCache.put(State.FUNCTIONAL, new FunctionalStateHandler());</span>
+<span class="nc" id="L266">      handlerCache.put(State.SAFEMODE, new SafeModeStateHandler());</span>
+<span class="nc" id="L267">      handlerCache.put(State.SAFEMODE_REPAIR, new SafeModeRepairStateHandler());</span>
+<span class="nc" id="L268">      handlerCache.put(State.SHUTDOWN, new ShutdownStateHandler());</span>
+<span class="nc" id="L269">    }</span>
+
+    // Instance must be started before it becomes valid for use
+    public void start(State initialState) {
+<span class="nc" id="L273">      synchronized (transitionLock) {</span>
+<span class="nc" id="L274">        transition(initialState);</span>
+<span class="nc" id="L275">      }</span>
+<span class="nc" id="L276">    }</span>
+
+    public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc" id="L279">      synchronized (transitionLock) {</span>
+<span class="nc" id="L280">        getHandler().handleEvent(event);</span>
+<span class="nc" id="L281">      }</span>
+<span class="nc" id="L282">    }</span>
+
+    public void shutdown() {
+<span class="nc" id="L285">      synchronized (transitionLock) {</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">        if (state == State.SHUTDOWN) {</span>
+<span class="nc" id="L287">          APP_LOG.warn(&quot;Multiple shutdown calls&quot;);</span>
+<span class="nc" id="L288">          return;</span>
+        }
+<span class="nc" id="L290">        internalTransition(State.SHUTDOWN);</span>
+<span class="nc" id="L291">      }</span>
+<span class="nc" id="L292">    }</span>
+
+    public State getState() {
+<span class="nc" id="L295">      return state;</span>
+    }
+
+    private StateHandler getHandler() {
+<span class="nc" id="L299">      return handlerCache.get(state);</span>
+    }
+
+    private void transition(State newState) {
+<span class="nc bnc" id="L303" title="All 2 branches missed.">      if (newState == State.SHUTDOWN) {</span>
+<span class="nc" id="L304">        throw new IllegalArgumentException(</span>
+          &quot;Set SHUTDOWN state by calling the shutdown method&quot;
+        );
+      }
+      // Shutdown is a terminal state
+<span class="nc bnc" id="L309" title="All 2 branches missed.">      if (state != State.SHUTDOWN) {</span>
+<span class="nc" id="L310">        internalTransition(newState);</span>
+      }
+<span class="nc" id="L312">    }</span>
+
+    private void internalTransition(State newState) {
+<span class="nc" id="L315">      getHandler().outboundHook();</span>
+<span class="nc" id="L316">      state = newState;</span>
+<span class="nc" id="L317">      getHandler().inboundHook();</span>
+<span class="nc" id="L318">    }</span>
+
+
+    // StateHandler implementations
+
+<span class="nc" id="L323">    private class PreStartStateHandler implements StateHandler {</span>
+      @Override
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc" id="L326">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L330">      }</span>
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L334">      }</span>
+    }
+
+<span class="nc" id="L337">    private class DisconnectedStateHandler implements StateHandler {</span>
+      @Override
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc bnc" id="L340" title="All 3 branches missed.">        switch (event) {</span>
+          case SyncConnected:
+<span class="nc" id="L342">            context.transition(State.CONNECTED);</span>
+<span class="nc" id="L343">            break;</span>
+          case Disconnected:
+<span class="nc" id="L345">            break;</span>
+          case Expired:
+            break;
+        }
+<span class="nc" id="L349">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L353">      }</span>
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L357">      }</span>
+    }
+
+<span class="nc" id="L360">    private class ConnectedStateHandler implements StateHandler {</span>
+<span class="nc" id="L361">      private volatile boolean isActive = false;</span>
+<span class="nc" id="L362">      private volatile boolean isScheduled = false;</span>
+<span class="nc" id="L363">      private final Object scheduleCheckLock = new Object();</span>
+
+      @Override
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc bnc" id="L367" title="All 4 branches missed.">        switch (event) {</span>
+          case SyncConnected:
+<span class="nc" id="L369">            break;</span>
+          case Disconnected:
+<span class="nc" id="L371">            context.transition(State.DISCONNECTED);</span>
+<span class="nc" id="L372">            break;</span>
+          case Expired:
+<span class="nc" id="L374">            context.transition(State.DISCONNECTED);</span>
+<span class="nc" id="L375">            expire();</span>
+            break;
+        }
+<span class="nc" id="L378">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L382">        startInitLoop();</span>
+<span class="nc" id="L383">      }</span>
+
+      private void startInitLoop() {
+<span class="nc" id="L386">        isActive = true;</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">        if (scheduleCompareAndSet()) {</span>
+<span class="nc" id="L388">          retryExecutor.execute(new ErrorLoggingRunnable(new Runnable() {</span>
+            @Override
+            public void run() {
+              try {
+<span class="nc" id="L392">                synchronized (transitionLock) {</span>
+                  // Only initialize if we are in the same state
+<span class="nc bnc" id="L394" title="All 2 branches missed.">                  if (context.getState() == State.CONNECTED) {</span>
+                    // Attempt initialization
+<span class="nc bnc" id="L396" title="All 2 branches missed.">                    if (initialize()) {</span>
+<span class="nc" id="L397">                      context.transition(State.FUNCTIONAL);</span>
+<span class="nc" id="L398">                      return; // Success, don't reschedule</span>
+                    }
+                  }
+<span class="nc" id="L401">                }</span>
+              } finally {
+<span class="nc" id="L403">                isScheduled = false;</span>
+<span class="nc" id="L404">              }</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">              if (scheduleCompareAndSet()) {</span>
+<span class="nc" id="L406">                retryExecutor.schedule(</span>
+                  this, retryIntervalMillis, TimeUnit.MILLISECONDS
+                );
+              }
+<span class="nc" id="L410">            }</span>
+          }));
+        }
+<span class="nc" id="L413">      }</span>
+
+      private boolean scheduleCompareAndSet() {
+<span class="nc" id="L416">        synchronized (scheduleCheckLock) {</span>
+<span class="nc bnc" id="L417" title="All 4 branches missed.">          if (isActive &amp;&amp; !isScheduled) {</span>
+<span class="nc" id="L418">            isScheduled = true;</span>
+<span class="nc" id="L419">            return true;</span>
+          }
+<span class="nc" id="L421">          return false;</span>
+<span class="nc" id="L422">        }</span>
+      }
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L427">        stopRepairLoop();</span>
+<span class="nc" id="L428">      }</span>
+
+      private void stopRepairLoop() {
+<span class="nc" id="L431">        isActive = false;</span>
+<span class="nc" id="L432">      }</span>
+    }
+
+<span class="nc" id="L435">    private class FunctionalStateHandler implements StateHandler {</span>
+      @Override
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc bnc" id="L438" title="All 4 branches missed.">        switch (event) {</span>
+          case SyncConnected:
+<span class="nc" id="L440">            break;</span>
+          case Disconnected:
+<span class="nc" id="L442">            context.transition(State.SAFEMODE);</span>
+<span class="nc" id="L443">            break;</span>
+          case Expired:
+<span class="nc" id="L445">            context.transition(State.DISCONNECTED);</span>
+<span class="nc" id="L446">            expire();</span>
+            break;
+        }
+<span class="nc" id="L449">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L453">      }</span>
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L457">      }</span>
+    }
+
+<span class="nc" id="L460">    private class SafeModeStateHandler implements StateHandler {</span>
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc bnc" id="L462" title="All 4 branches missed.">        switch (event) {</span>
+          case SyncConnected:
+<span class="nc" id="L464">            context.transition(State.SAFEMODE_REPAIR);</span>
+<span class="nc" id="L465">            break;</span>
+          case Disconnected:
+<span class="nc" id="L467">            break;</span>
+          case Expired:
+<span class="nc" id="L469">            context.transition(State.DISCONNECTED);</span>
+<span class="nc" id="L470">            expire();</span>
+            break;
+        }
+<span class="nc" id="L473">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L477">      }</span>
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L481">      }</span>
+    }
+
+<span class="nc" id="L484">    private class SafeModeRepairStateHandler implements StateHandler {</span>
+<span class="nc" id="L485">      private volatile boolean isActive = false;</span>
+<span class="nc" id="L486">      private volatile boolean isScheduled = false;</span>
+<span class="nc" id="L487">      private final Object scheduleCheckLock = new Object();</span>
+
+      public void handleEvent(Watcher.Event.KeeperState event) {
+<span class="nc bnc" id="L490" title="All 4 branches missed.">        switch (event) {</span>
+          case SyncConnected:
+<span class="nc" id="L492">            break;</span>
+          case Disconnected:
+<span class="nc" id="L494">            context.transition(State.SAFEMODE);</span>
+<span class="nc" id="L495">            break;</span>
+          case Expired:
+<span class="nc" id="L497">            context.transition(State.DISCONNECTED);</span>
+<span class="nc" id="L498">            expire();</span>
+            break;
+        }
+<span class="nc" id="L501">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L505">        startRepairLoop();</span>
+<span class="nc" id="L506">      }</span>
+
+      private void startRepairLoop() {
+<span class="nc" id="L509">        isActive = true;</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">        if (scheduleCompareAndSet()) {</span>
+<span class="nc" id="L511">          retryExecutor.execute(new ErrorLoggingRunnable(new Runnable() {</span>
+            @Override
+            public void run() {
+              try {
+<span class="nc" id="L515">                synchronized (transitionLock) {</span>
+                  // Only repair if we are still in the same state
+<span class="nc bnc" id="L517" title="All 2 branches missed.">                  if (context.getState() == State.SAFEMODE_REPAIR) {</span>
+                    // Attempt repair
+<span class="nc bnc" id="L519" title="All 2 branches missed.">                    if (repair()) {</span>
+<span class="nc" id="L520">                      context.transition(State.FUNCTIONAL);</span>
+<span class="nc" id="L521">                      return;  // Success, don't reschedule</span>
+                    }
+                  }
+<span class="nc" id="L524">                }</span>
+              } finally {
+<span class="nc" id="L526">                isScheduled = false;</span>
+<span class="nc" id="L527">              }</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">              if (scheduleCompareAndSet()) {</span>
+<span class="nc" id="L529">                retryExecutor.schedule(</span>
+                  this, retryIntervalMillis, TimeUnit.MILLISECONDS
+                );
+              }
+<span class="nc" id="L533">            }</span>
+          }));
+        }
+<span class="nc" id="L536">      }</span>
+
+      private boolean scheduleCompareAndSet() {
+<span class="nc" id="L539">        synchronized (scheduleCheckLock) {</span>
+<span class="nc bnc" id="L540" title="All 4 branches missed.">          if (isActive &amp;&amp; !isScheduled) {</span>
+<span class="nc" id="L541">            isScheduled = true;</span>
+<span class="nc" id="L542">            return true;</span>
+          }
+<span class="nc" id="L544">          return false;</span>
+<span class="nc" id="L545">        }</span>
+      }
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L550">        stopRepairLoop();</span>
+<span class="nc" id="L551">      }</span>
+
+      private void stopRepairLoop() {
+<span class="nc" id="L554">        isActive = false;</span>
+<span class="nc" id="L555">      }</span>
+    }
+
+<span class="nc" id="L558">    private class ShutdownStateHandler implements StateHandler {</span>
+      @Override
+      public void handleEvent(Watcher.Event.KeeperState event) {
+        // Terminal state
+<span class="nc" id="L562">      }</span>
+
+      @Override
+      public void inboundHook() {
+<span class="nc" id="L566">        expire();</span>
+<span class="nc" id="L567">      }</span>
+
+      @Override
+      public void outboundHook() {
+<span class="nc" id="L571">      }</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

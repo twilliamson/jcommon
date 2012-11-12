@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZNodePruner.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.cmd</a> &gt; <span class="el_source">ZNodePruner.java</span></div><h1>ZNodePruner.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.cmd;
+
+import com.facebook.util.StreamImporter;
+import com.facebook.zookeeper.ZkUtil;
+import com.facebook.zookeeper.path.ZkGenericPath;
+import com.facebook.zookeeper.ZooKeeperIface;
+import com.facebook.zookeeper.convenience.ZkQuickConnectionManager;
+import com.facebook.zookeeper.convenience.ZkScript;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Options;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.data.Stat;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+
+public class ZNodePruner extends ZkScript {
+  public static final String DEFAULT_KEYWORD = &quot;freeze&quot;;
+
+<span class="nc" id="L41">  private volatile boolean verbose = false;</span>
+
+  public ZNodePruner(ZkQuickConnectionManager zkQuickConnectionManager) {
+<span class="nc" id="L44">    super(zkQuickConnectionManager);</span>
+<span class="nc" id="L45">  }</span>
+
+  public ZNodePruner() {
+<span class="nc" id="L48">    this(new ZkQuickConnectionManager());</span>
+<span class="nc" id="L49">  }</span>
+
+  public void setVerbose(boolean verbose) {
+<span class="nc" id="L52">    this.verbose = verbose;</span>
+<span class="nc" id="L53">  }</span>
+
+  public void prunePersistent(String pathStr, String keyword, File saveTemplate)
+    throws IOException, InterruptedException, KeeperException {
+<span class="nc" id="L57">    InputStream in = new FileInputStream(saveTemplate);</span>
+    try {
+<span class="nc" id="L59">      prunePersistent(pathStr, keyword, in);</span>
+    } finally {
+<span class="nc" id="L61">      in.close();</span>
+<span class="nc" id="L62">    }</span>
+<span class="nc" id="L63">  }</span>
+
+  public void prunePersistent(String pathStr, String keyword, InputStream in)
+    throws IOException, InterruptedException, KeeperException {
+<span class="nc" id="L67">    prunePersistent(pathStr, keyword, StreamImporter.importLines(in));</span>
+<span class="nc" id="L68">  }</span>
+
+  public void prunePersistent(
+    String pathStr, String keyword, List&lt;String&gt; toKeep
+  ) throws InterruptedException, KeeperException {
+<span class="nc" id="L73">    ZkGenericPath path = new ZkGenericPath(pathStr);</span>
+<span class="nc" id="L74">    Set&lt;String&gt; keepSet = expandToKeepSet(toKeep);</span>
+<span class="nc" id="L75">    internalPrunePersistent(path, keyword, keepSet);</span>
+<span class="nc" id="L76">  }</span>
+
+  private void internalPrunePersistent(
+    ZkGenericPath path, String keyword, Set&lt;String&gt; keepSet
+  ) throws InterruptedException, KeeperException {
+<span class="nc bnc" id="L81" title="All 2 branches missed.">    if (isEphemeral(path.toString())) {</span>
+      // We should only be scanning persistent nodes (although we may delete
+      // ephemeral nodes in order to remove a parent persistent node)
+<span class="nc" id="L84">      return;</span>
+    }
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    if (keepSet.contains(path.toString())) {</span>
+      try {
+<span class="nc" id="L88">        ZooKeeperIface zk = getZk();</span>
+
+<span class="nc" id="L90">        byte[] data = zk.getData(path.toString(), false, null);</span>
+
+<span class="nc bnc" id="L92" title="All 4 branches missed.">        if (data != null &amp;&amp;</span>
+          keyword.equals(ZkUtil.bytesToString(data))
+          ) {
+<span class="nc" id="L95">          zk.setData(path.toString(), new byte[0], -1);</span>
+        }
+
+<span class="nc" id="L98">        List&lt;String&gt; children = zk.getChildren(path.toString(), null);</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">        for (String child : children) {</span>
+<span class="nc" id="L100">          internalPrunePersistent(path.appendChild(child), keyword, keepSet);</span>
+<span class="nc" id="L101">        }</span>
+<span class="nc" id="L102">      } catch (KeeperException.NoNodeException e) {</span>
+        // If the node disappears while scanning it, then just ignore
+<span class="nc" id="L104">      }</span>
+    } else {
+<span class="nc" id="L106">      deleteSubtree(path, keyword);</span>
+    }
+<span class="nc" id="L108">  }</span>
+
+  private void deleteSubtree(ZkGenericPath path, String keyword)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L112">    ZooKeeperIface zk = getZk();</span>
+    try {
+<span class="nc bnc" id="L114" title="All 2 branches missed.">      if (!isEphemeral(path.toString())) {</span>
+        // Only set freeze on non-ephemerals since ephemerals cant have children
+<span class="nc" id="L116">        zk.setData(</span>
+          path.toString(),
+          ZkUtil.stringToBytes(keyword),
+          -1
+        );
+      }
+
+      while (true) {
+<span class="nc" id="L124">        List&lt;String&gt; children = zk.getChildren(path.toString(), null);</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">        for (String child : children) {</span>
+<span class="nc" id="L126">          deleteSubtree(path.appendChild(child), keyword);</span>
+<span class="nc" id="L127">        }</span>
+        try {
+<span class="nc" id="L129">          zk.delete(path.toString(), -1);</span>
+<span class="nc" id="L130">          break;</span>
+<span class="nc" id="L131">        } catch (KeeperException.NotEmptyException e) {</span>
+          // Repeat since children were re-added
+        }
+<span class="nc" id="L134">      }</span>
+<span class="nc" id="L135">    } catch (KeeperException.NoNodeException e) {</span>
+      // Ignore since we are trying to delete it
+<span class="nc" id="L137">    }</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">    if (verbose) {</span>
+<span class="nc" id="L139">      System.out.println(&quot;Deleted ZNode: &quot; + path);</span>
+    }
+<span class="nc" id="L141">  }</span>
+
+  private boolean isEphemeral(String pathStr)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L145">    ZooKeeperIface zk = getZk();</span>
+<span class="nc" id="L146">    Stat stat = new Stat();</span>
+<span class="nc" id="L147">    zk.getData(pathStr, null, stat);</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">    return stat.getEphemeralOwner() != 0;</span>
+  }
+
+  private Set&lt;String&gt; expandToKeepSet(List&lt;String&gt; toKeep) {
+    // Add all listed ZNodes as well as all of their ancestors
+<span class="nc" id="L153">    Set&lt;String&gt; keepSet = new HashSet&lt;String&gt;();</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">    for (String pathStr : toKeep) {</span>
+<span class="nc" id="L155">      ZkGenericPath path = ZkGenericPath.parse(&quot;/&quot;, pathStr);</span>
+<span class="nc" id="L156">      Iterator&lt;ZkGenericPath&gt; lineageIter = path.lineageIterator();</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">      while(lineageIter.hasNext()) {</span>
+<span class="nc" id="L158">        keepSet.add(lineageIter.next().toString());</span>
+      }
+<span class="nc" id="L160">    }</span>
+<span class="nc" id="L161">    return keepSet;</span>
+  }
+
+  @Override
+  protected String getName() {
+<span class="nc" id="L166">    return ZNodePruner.class.getName();</span>
+  }
+
+  @Override
+  protected Options getSpecificOptions() {
+<span class="nc" id="L171">    Options options = new Options();</span>
+<span class="nc" id="L172">    options.addOption(</span>
+      &quot;z&quot;,
+      &quot;zkpath&quot;,
+      true,
+      &quot;ZooKeeper path to prune (includes all descendants) [Required]&quot;
+    );
+<span class="nc" id="L178">    options.addOption(</span>
+      &quot;k&quot;,
+      &quot;keyword&quot;,
+      true,
+      &quot;Keyword to write into zNodes that will be removed. This may be used &quot; +
+        &quot;to help reduce activity on or underneath this node [Default: freeze]&quot;
+    );
+<span class="nc" id="L185">    options.addOption(</span>
+      &quot;f&quot;,
+      &quot;file-template&quot;,
+      true,
+      &quot;Path to file containing new-line delimited list of ZNodes to save. &quot; +
+        &quot;The list only applies to persistent ZNodes. If this parameter is &quot; +
+        &quot;not specified, expects the values to be provided via standard input.&quot;
+    );
+<span class="nc" id="L193">    options.addOption(</span>
+      &quot;v&quot;,
+      &quot;verbose&quot;,
+      false,
+      &quot;Print verbose messages [Default: off]&quot;
+    );
+<span class="nc" id="L199">    return options;</span>
+  }
+
+  @Override
+  protected boolean verifySpecificOptions(CommandLine cmd) {
+<span class="nc" id="L204">    setVerbose(cmd.hasOption(&quot;verbose&quot;));</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    if (!cmd.hasOption(&quot;zkpath&quot;)) {</span>
+<span class="nc" id="L206">      System.err.println(&quot;Error: You must specify a ZooKeeper path.\n&quot;);</span>
+<span class="nc" id="L207">      return false;</span>
+    }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    if (cmd.hasOption(&quot;file-template&quot;)) {</span>
+<span class="nc" id="L210">      File template = new File(cmd.getOptionValue(&quot;file-template&quot;));</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">      if (!template.exists()) {</span>
+<span class="nc" id="L212">        System.err.println(&quot;Error: invalid file-template path.\n&quot;);</span>
+<span class="nc" id="L213">        return false;</span>
+      }
+    }
+<span class="nc" id="L216">    return true;</span>
+  }
+
+  @Override
+  protected void runScript(CommandLine cmd) throws Exception {
+<span class="nc" id="L221">    String root = cmd.getOptionValue(&quot;zkpath&quot;);</span>
+<span class="nc" id="L222">    String keyword = cmd.getOptionValue(&quot;keyword&quot;, ZNodePruner.DEFAULT_KEYWORD);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">    if (cmd.hasOption(&quot;file-template&quot;)) {</span>
+<span class="nc" id="L224">      File saveTemplate = new File(cmd.getOptionValue(&quot;file-template&quot;));</span>
+<span class="nc" id="L225">      prunePersistent(root, keyword, saveTemplate);</span>
+<span class="nc" id="L226">    } else {</span>
+<span class="nc" id="L227">      prunePersistent(root, keyword, System.in);</span>
+    }
+<span class="nc" id="L229">  }</span>
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L232">    ZkScript script = new ZNodePruner();</span>
+<span class="nc" id="L233">    script.runMain(args);</span>
+<span class="nc" id="L234">    System.out.println(&quot;DONE&quot;);</span>
+<span class="nc" id="L235">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

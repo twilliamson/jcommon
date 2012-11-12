@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkPathCore.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.path</a> &gt; <span class="el_source">ZkPathCore.java</span></div><h1>ZkPathCore.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.path;
+
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Immutable class representing a ZooKeeper application path
+ */
+public class ZkPathCore {
+  private final String appRoot;
+  private final List&lt;String&gt; zNodes;
+  private final String pathStr;
+
+  // Package-private constructor
+<span class="nc" id="L30">  ZkPathCore(String appRoot, List&lt;String&gt; zNodes) {</span>
+<span class="nc" id="L31">    this.appRoot = appRoot;</span>
+<span class="nc" id="L32">    this.zNodes = zNodes;</span>
+<span class="nc" id="L33">    pathStr = generatePathStr();</span>
+<span class="nc" id="L34">  }</span>
+
+  public ZkPathCore(String appRoot) {
+<span class="nc" id="L37">    this(appRoot, Collections.&lt;String&gt;emptyList());</span>
+<span class="nc" id="L38">  }</span>
+
+  public ZkPathCore(ZkPathCore pathCore) {
+<span class="nc" id="L41">    this(pathCore.appRoot, pathCore.zNodes);</span>
+<span class="nc" id="L42">  }</span>
+
+  public String getAppRoot() {
+<span class="nc" id="L45">    return appRoot;</span>
+  }
+
+  public List&lt;String&gt; getZNodes() {
+<span class="nc" id="L49">    return Collections.unmodifiableList(zNodes);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L54">    return pathStr;</span>
+  }
+
+  private String generatePathStr() {
+<span class="nc bnc" id="L58" title="All 2 branches missed.">    if (zNodes.isEmpty()) {</span>
+<span class="nc" id="L59">      return appRoot;</span>
+    } else {
+<span class="nc" id="L61">      StringBuilder sb = new StringBuilder(computeStringLen());</span>
+      // Need special handling if appRoot is the ZooKeeper root: &quot;/&quot;
+<span class="nc bnc" id="L63" title="All 2 branches missed.">      String normalizedAppRoot = appRoot.equals(&quot;/&quot;) ? &quot;&quot; : appRoot;</span>
+<span class="nc" id="L64">      sb.append(normalizedAppRoot);</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">      for (String zNode : zNodes) {</span>
+<span class="nc" id="L66">        sb.append(&quot;/&quot;).append(zNode);</span>
+<span class="nc" id="L67">      }</span>
+<span class="nc" id="L68">      return sb.toString();</span>
+    }
+  }
+
+  private int computeStringLen() {
+<span class="nc bnc" id="L73" title="All 2 branches missed.">    if (zNodes.isEmpty()) {</span>
+<span class="nc" id="L74">      return appRoot.length();</span>
+    } else {
+      // Need special handling if appRoot is the ZooKeeper root: &quot;/&quot;
+<span class="nc bnc" id="L77" title="All 2 branches missed.">      String normalizedAppRoot = appRoot.equals(&quot;/&quot;) ? &quot;&quot; : appRoot;</span>
+<span class="nc" id="L78">      int length = normalizedAppRoot.length();</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">      for (String zNode : zNodes) {</span>
+<span class="nc" id="L80">        length += zNode.length() + 1; // Add one for the slash</span>
+<span class="nc" id="L81">      }</span>
+<span class="nc" id="L82">      return length;</span>
+    }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L89">      return true;</span>
+    }
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    if (!(o instanceof ZkPathCore)) {</span>
+<span class="nc" id="L92">      return false;</span>
+    }
+
+<span class="nc" id="L95">    final ZkPathCore that = (ZkPathCore) o;</span>
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">    if (!appRoot.equals(that.appRoot)) {</span>
+<span class="nc" id="L98">      return false;</span>
+    }
+<span class="nc bnc" id="L100" title="All 2 branches missed.">    if (!zNodes.equals(that.zNodes)) {</span>
+<span class="nc" id="L101">      return false;</span>
+    }
+
+<span class="nc" id="L104">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L109">    int result = appRoot.hashCode();</span>
+<span class="nc" id="L110">    result = 31 * result + zNodes.hashCode();</span>
+<span class="nc" id="L111">    return result;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
