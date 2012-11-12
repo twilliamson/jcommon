@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ArithmeticDecoder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">ArithmeticDecoder.java</span></div><h1>ArithmeticDecoder.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.facebook.stats.cardinality.Model.SymbolInfo;
+import com.google.common.base.Preconditions;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
+class ArithmeticDecoder {
+  private final Model model;
+
+  private long low;
+  private long high;
+  private long value;
+  private int bufferedBytes;
+
+  private final InputStream in;
+
+<span class="nc" id="L35">  public ArithmeticDecoder(Model model, InputStream in) throws IOException {</span>
+
+<span class="nc" id="L37">    Preconditions.checkNotNull(model, &quot;model is null&quot;);</span>
+<span class="nc" id="L38">    Preconditions.checkNotNull(in, &quot;in is null&quot;);</span>
+
+<span class="nc" id="L40">    this.model = model;</span>
+<span class="nc" id="L41">    this.in = in;</span>
+
+    // We initialize the decoder with 48 bits (6 bytes) of input.
+<span class="nc bnc" id="L44" title="All 2 branches missed.">    for (int i = 0; i &lt; 6; ++i) {</span>
+<span class="nc" id="L45">      bufferByte();</span>
+<span class="nc" id="L46">      ++bufferedBytes;</span>
+    }
+<span class="nc" id="L48">  }</span>
+
+  public ArithmeticDecoder(Model model, byte[] bytes) throws IOException {
+<span class="nc" id="L51">    this(model, new ByteArrayInputStream(Preconditions.checkNotNull(bytes, &quot;bytes is null&quot;)));</span>
+<span class="nc" id="L52">  }</span>
+
+  public int decode() throws IOException {
+    // determine next symbol
+    // calculate the % of the value within the range
+<span class="nc" id="L57">    long range = (high - low + 1) &gt;&gt;&gt; model.log2MaxCount();</span>
+
+<span class="nc" id="L59">    int currentSymbolCount = (int) ((value - low) / range);</span>
+<span class="nc" id="L60">    SymbolInfo symbolInfo = model.countToSymbol(currentSymbolCount);</span>
+
+<span class="nc" id="L62">    high = low + (range * symbolInfo.highCount()) - 1;</span>
+<span class="nc" id="L63">    low = low + range * symbolInfo.lowCount();</span>
+
+    // if high bytes are equal, remove high byte and add a new byte of input
+<span class="nc bnc" id="L66" title="All 2 branches missed.">    while ((high &amp; 0xFF0000000000L) == (low &amp; 0xFF0000000000L)) {</span>
+<span class="nc" id="L67">      bufferByte();</span>
+    }
+
+    // handle possible underflow
+    // if top two bytes differ by only one digit
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    if ((high &gt;&gt; 32) - (low &gt;&gt; 32) == 1) {</span>
+      // if second highest bytes are 0x00 on the high and 0xFF
+      // on the low, we need to deal with underflow
+<span class="nc bnc" id="L75" title="All 4 branches missed.">      while ((high &amp; 0x00FF00000000L) == 0 &amp;&amp; (low &amp; 0x00FF00000000L) == 0x00FF00000000L) {</span>
+        // remove second chunk of low and high (shifting over lower bits)
+<span class="nc" id="L77">        low = removeUnderflowByte(low);</span>
+<span class="nc" id="L78">        high = removeUnderflowByte(high);</span>
+<span class="nc" id="L79">        value = removeUnderflowByte(value);</span>
+
+        // add a new byte
+<span class="nc" id="L82">        bufferByte();</span>
+      }
+    }
+
+<span class="nc" id="L86">    low &amp;= 0xFFFFFFFFFFFFL;</span>
+<span class="nc" id="L87">    high &amp;= 0xFFFFFFFFFFFFL;</span>
+<span class="nc" id="L88">    value &amp;= 0xFFFFFFFFFFFFL;</span>
+
+<span class="nc" id="L90">    return symbolInfo.symbol();</span>
+  }
+
+  private void bufferByte() throws IOException {
+    // shift over the high and low
+<span class="nc" id="L95">    low &lt;&lt;= 8;</span>
+<span class="nc" id="L96">    high = (high &lt;&lt; 8) | 0xFF;</span>
+
+    // read a byte and add to the value
+<span class="nc" id="L99">    int nextByte = in.read();</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">    if (nextByte &lt; 0) {</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">      if (bufferedBytes == 0) {</span>
+<span class="nc" id="L102">        return;</span>
+      }
+<span class="nc" id="L104">      value &lt;&lt;= 8;</span>
+<span class="nc" id="L105">      --bufferedBytes;</span>
+    } else {
+<span class="nc" id="L107">      value = (value &lt;&lt; 8);</span>
+<span class="nc" id="L108">      value |= nextByte;</span>
+    }
+<span class="nc" id="L110">  }</span>
+
+  public static long removeUnderflowByte(long value) {
+<span class="nc" id="L113">    long highBits = (value &amp; 0xFF0000000000L) &gt;&gt;&gt; 8;</span>
+<span class="nc" id="L114">    long lowBits = value &amp; 0x0000FFFFFFFFL;</span>
+<span class="nc" id="L115">    long newValue = highBits | lowBits;</span>
+<span class="nc" id="L116">    return newValue;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CounterCacher.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">CounterCacher.java</span></div><h1>CounterCacher.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/* Simple class to periodically gather a service's counters and cache them.
+ * How to use:
+ *
+ * When your thrift service initializes:
+ *
+ *   this.counterCacher = new CounterCacher(this);
+ *   this.counterCacher.run();
+ *
+ * Then implement getCounters() as something like:
+ *
+ *   public Map&lt;String, Long&gt; getCounters() {
+ *     return this.counterCacher.getCounters();
+ *   }
+ *
+ * Make sure you implement your own counter-generating code inside
+ * makeCounters(), and have it call super.makeCounters() so that fb303 can
+ * do the same.
+ *
+ */
+
+public class CounterCacher {
+<span class="nc" id="L43">  private static class ThreadFactory implements java.util.concurrent.ThreadFactory {</span>
+<span class="nc" id="L44">    long count = 0;</span>
+
+    public Thread newThread(Runnable r) {
+<span class="nc" id="L47">      count ++;</span>
+<span class="nc" id="L48">      return new Thread(threadGroup, r, threadGroup.getName() + &quot;-&quot; + count);</span>
+    }
+  }
+
+  private class CounterCacherRunner implements Runnable {
+    private final long minWait;
+    private final long maxWait;
+
+<span class="nc" id="L56">    public CounterCacherRunner(long minWait, long maxWait) {</span>
+<span class="nc" id="L57">      this.minWait = minWait;</span>
+<span class="nc" id="L58">      this.maxWait = maxWait;</span>
+<span class="nc" id="L59">    }</span>
+
+    public void run() {
+<span class="nc" id="L62">      final Logger log = Logger.getLogger(CounterCacher.class.getCanonicalName());</span>
+<span class="nc" id="L63">      wantRunning = true;</span>
+<span class="nc" id="L64">      running = true;</span>
+
+<span class="nc" id="L66">      log.log(Level.INFO, &quot;Cacheing counters every &quot; + minWait + &quot; - &quot; + maxWait + &quot; msec&quot;);</span>
+
+      try {
+<span class="nc bnc" id="L69" title="All 2 branches missed.">        while(wantRunning) {</span>
+          try {
+<span class="nc" id="L71">            long startTime = System.currentTimeMillis();</span>
+<span class="nc" id="L72">            counters = reporter.makeCounters();</span>
+<span class="nc" id="L73">            Thread.sleep(minWait);</span>
+<span class="nc" id="L74">            long runTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L75">            long remainingWait = maxWait - runTime;</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">            if(remainingWait &gt; 0) {</span>
+<span class="nc" id="L77">              Thread.sleep(remainingWait);</span>
+            }
+<span class="nc" id="L79">          } catch(InterruptedException iex) {</span>
+<span class="nc" id="L80">            wantRunning = false;</span>
+<span class="nc" id="L81">          }</span>
+        }
+<span class="nc" id="L83">      } catch(RuntimeException rex) {</span>
+<span class="nc" id="L84">        log.log(Level.SEVERE, &quot;RuntimeException thrown while running makeCounters()&quot;, rex);</span>
+      } finally {
+<span class="nc" id="L86">        running = false;</span>
+<span class="nc" id="L87">      }</span>
+<span class="nc" id="L88">    }</span>
+  }
+
+<span class="nc" id="L91">  private final static ThreadGroup threadGroup = new ThreadGroup(&quot;CounterCacher&quot;);</span>
+<span class="nc" id="L92">  private final static ThreadFactory threadFactory = new ThreadFactory();</span>
+
+
+  private volatile Thread thread;
+  private final Runnable runnable;
+  private final FacebookStatsReporter reporter;
+
+<span class="nc" id="L99">  private volatile boolean running = false;</span>
+<span class="nc" id="L100">  private volatile boolean wantRunning = false;</span>
+
+  private volatile Map&lt;String, Long&gt; counters;
+
+  /**
+   * @param  FacebookStatsReporter    Your service
+   * @param  long minWait             Minimum time to wait between calls
+   *                                  to makeCounters (default=1000, or 1s)
+   * @param  long maxWait             Maximum time to wait between calls
+   *                                  to makeCounters (default=1000, or 1s)
+   *
+   * Example:
+   *
+   * If it takes 2 seconds to make your counters, minWait is 1 second,
+   * and maxWait is 10 seconds then there will be an 8 second delay
+   * between calls. If it takes 15 seconds to make your counters, there
+   * will be a 1 second delay.
+   */
+<span class="nc" id="L118">  public CounterCacher(final FacebookStatsReporter reporter, long minWait, long maxWait) {</span>
+<span class="nc" id="L119">    runnable = new CounterCacherRunner(minWait, maxWait);</span>
+<span class="nc" id="L120">    this.reporter = reporter;</span>
+<span class="nc" id="L121">  }</span>
+
+  public CounterCacher(FacebookStatsReporter reporter, long minWait) {
+<span class="nc" id="L124">    this(reporter, minWait, minWait);</span>
+<span class="nc" id="L125">  }</span>
+
+  public CounterCacher(FacebookStatsReporter reporter) {
+<span class="nc" id="L128">    this(reporter, 1000);</span>
+<span class="nc" id="L129">  }</span>
+
+  public void start() {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">    if(running) {</span>
+<span class="nc" id="L133">      throw new IllegalStateException(&quot;start() called while already running!&quot;);</span>
+    }
+
+<span class="nc" id="L136">    thread = threadFactory.newThread(runnable);</span>
+<span class="nc" id="L137">    thread.start();</span>
+<span class="nc" id="L138">  }</span>
+
+  public void stop() {
+<span class="nc bnc" id="L141" title="All 2 branches missed.">    if(!running) {</span>
+<span class="nc" id="L142">      throw new IllegalStateException(&quot;stop() called while not running!&quot;);</span>
+    }
+
+<span class="nc" id="L145">    wantRunning = false;</span>
+<span class="nc" id="L146">    thread.interrupt();</span>
+    try {
+<span class="nc" id="L148">      thread.join();</span>
+<span class="nc" id="L149">    } catch(InterruptedException iex) { }</span>
+<span class="nc" id="L150">    thread = null;</span>
+<span class="nc" id="L151">  }</span>
+
+  public Map&lt;String, Long&gt; getCounters() {
+<span class="nc" id="L154">    return counters;</span>
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

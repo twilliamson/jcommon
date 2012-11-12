@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TemplateStatType.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.mx</a> &gt; <span class="el_source">TemplateStatType.java</span></div><h1>TemplateStatType.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.mx;
+
+/**
+ * efficient implementation where you want a default key and a base key
+ * &lt;p/&gt;
+ * example:
+ * &lt;p/&gt;
+ * We want getKey() to return
+ * &quot;scribe.all_cat.network_store.sent.bytes&quot;
+ * but want to be able to efficient create per-category value:
+ * &quot;scribe.per_cat.category.network_store.sent.bytes&quot;
+ * &lt;p/&gt;
+ * We don't want to prepend &quot;scribe.all_cat&quot; every time we need this default
+ * so we memoize a default key, but store the prefix/suffix for the
+ * per-category key.
+ */
+public class TemplateStatType implements StatType {
+  private final String basePrefix;
+  private final String baseSuffix;
+  private String defaultKey;
+
+  public TemplateStatType(
+    String basePrefix, String baseSuffix, String defaultKey
+<span class="nc" id="L39">  ) {</span>
+<span class="nc" id="L40">    this.basePrefix = basePrefix;</span>
+<span class="nc" id="L41">    this.baseSuffix = baseSuffix;</span>
+<span class="nc" id="L42">    this.defaultKey = defaultKey;</span>
+<span class="nc" id="L43">  }</span>
+
+  @Override
+  public String getKey() {
+<span class="nc" id="L47">    internalMaterialize();</span>
+
+<span class="nc" id="L49">    return defaultKey;</span>
+  }
+
+  // materializes the default key; handles null values for 
+  // basePrefix and baseSuffix 
+  private void internalMaterialize() {
+<span class="nc bnc" id="L55" title="All 2 branches missed.">    if (defaultKey == null) {</span>
+<span class="nc bnc" id="L56" title="All 4 branches missed.">      if (basePrefix == null &amp;&amp; baseSuffix == null) {</span>
+<span class="nc" id="L57">        defaultKey = null;</span>
+<span class="nc bnc" id="L58" title="All 2 branches missed.">      } else if (basePrefix == null) {</span>
+<span class="nc" id="L59">        defaultKey = baseSuffix;</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">      } else if (baseSuffix == null) {</span>
+<span class="nc" id="L61">        defaultKey = basePrefix;</span>
+      } else {
+<span class="nc" id="L63">        defaultKey = basePrefix + baseSuffix;</span>
+      }
+    }
+<span class="nc" id="L66">  }</span>
+
+  @Override
+  public StatType append(String suffix) {
+<span class="nc bnc" id="L70" title="All 2 branches missed.">    return new TemplateStatType(</span>
+      basePrefix, baseSuffix == null ? suffix : baseSuffix + suffix, null
+    );
+  }
+
+  @Override
+  public StatType prepend(String prefix) {
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    return new TemplateStatType(</span>
+      basePrefix == null ? prefix : prefix + basePrefix, baseSuffix, null
+    );
+  }
+
+  @Override
+  public StatType materialize(String value) {
+    // optimize to remove a string concatenation
+<span class="nc bnc" id="L85" title="All 4 branches missed.">    if (value != null &amp;&amp; !value.isEmpty()) {</span>
+<span class="nc" id="L86">      return new TemplateStatType(</span>
+        basePrefix, baseSuffix, basePrefix + value + baseSuffix
+      );
+    } else {
+<span class="nc" id="L90">      return new TemplateStatType(</span>
+        basePrefix, baseSuffix, basePrefix + baseSuffix
+      );
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

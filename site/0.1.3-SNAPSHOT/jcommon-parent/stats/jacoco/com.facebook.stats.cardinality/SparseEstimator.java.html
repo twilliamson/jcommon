@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SparseEstimator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">SparseEstimator.java</span></div><h1>SparseEstimator.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.NotThreadSafe;
+import java.util.Arrays;
+
+/**
+ * A low (compact) cardinality estimator
+ */
+@NotThreadSafe
+class SparseEstimator
+  implements Estimator {
+  private final static int BITS_PER_BUCKET = 4;
+  private final static int BUCKET_VALUE_MASK = (1 &lt;&lt; BITS_PER_BUCKET) - 1;
+  public final static int MAX_BUCKET_VALUE = (1 &lt;&lt; BITS_PER_BUCKET);
+
+<span class="nc" id="L33">  private final static int INSTANCE_SIZE = UnsafeUtil.sizeOf(SparseEstimator.class);</span>
+
+  // number of bits used for bucket index
+  private final byte indexBits;
+
+<span class="nc" id="L38">  private short bucketCount = 0;</span>
+
+  /*
+   This structure keeps a sorted list of bucket entries of size log2(numberOfBuckets) +
+    BITS_PER_BUCKET packed into an array of longs.
+
+   Within each long, buckets are stored in little-endian order, aligned to the least-significant bit
+    edge. For instance, if a bucket entry is 16 bits long (4 buckets per slot), the layout is:
+
+   slot 0:  [ index 3 | index 2 | index 1 | index 0 ]
+   slot 1:  [ index 7 | index 6 | index 5 | index 4 ]
+   ....
+  */
+  private long[] slots;
+
+  public SparseEstimator(int numberOfBuckets) {
+<span class="nc" id="L54">    this(numberOfBuckets, 1);</span>
+<span class="nc" id="L55">  }</span>
+
+  public SparseEstimator(int[] buckets) {
+<span class="nc" id="L58">    this(buckets.length, countNonZeroBuckets(buckets));</span>
+
+<span class="nc bnc" id="L60" title="All 2 branches missed.">    for (int i = 0; i &lt; buckets.length; i++) {</span>
+<span class="nc" id="L61">      setIfGreater(i, buckets[i]);</span>
+    }
+<span class="nc" id="L63">  }</span>
+
+<span class="nc" id="L65">  public SparseEstimator(int numberOfBuckets, int initialCapacity) {</span>
+<span class="nc" id="L66">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(numberOfBuckets),
+      &quot;numberOfBuckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L71">    this.indexBits = (byte) Integer.numberOfTrailingZeros(numberOfBuckets); // log2(numberOfBuckets)</span>
+<span class="nc" id="L72">    slots = new long[(initialCapacity + getBucketsPerSlot()) / getBucketsPerSlot()];</span>
+<span class="nc" id="L73">  }</span>
+
+  public boolean setIfGreater(int bucket, int highestBitPosition) {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    Preconditions.checkArgument(</span>
+      highestBitPosition &lt; MAX_BUCKET_VALUE,
+      &quot;highestBitPosition %s is bigger than allowed by BITS_PER_BUCKET (%s)&quot;,
+      highestBitPosition,
+      BITS_PER_BUCKET
+    );
+
+<span class="nc bnc" id="L83" title="All 2 branches missed.">    if (highestBitPosition == 0) {</span>
+<span class="nc" id="L84">      return false; // no need to set anything -- 0 is implied if bucket is not present</span>
+    }
+
+<span class="nc" id="L87">    int index = findBucket(bucket);</span>
+
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (index &lt; 0) {</span>
+<span class="nc" id="L90">      insertAt(-(index + 1), bucket, highestBitPosition);</span>
+<span class="nc" id="L91">      return true;</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    } else if (getEntry(index).getValue() &lt; highestBitPosition) {</span>
+<span class="nc" id="L93">      setEntry(index, bucket, highestBitPosition);</span>
+<span class="nc" id="L94">      return true;</span>
+    }
+
+<span class="nc" id="L97">    return false;</span>
+  }
+
+  public int[] buckets() {
+<span class="nc" id="L101">    int[] buckets = new int[getNumberOfBuckets()];</span>
+
+<span class="nc bnc" id="L103" title="All 2 branches missed.">    for (int i = 0; i &lt; bucketCount; ++i) {</span>
+<span class="nc" id="L104">      Entry entry = getEntry(i);</span>
+<span class="nc" id="L105">      buckets[entry.getBucket()] = entry.getValue();</span>
+    }
+
+<span class="nc" id="L108">    return buckets;</span>
+  }
+
+  public int getNumberOfBuckets() {
+<span class="nc" id="L112">    return 1 &lt;&lt; indexBits;</span>
+  }
+
+  @Override
+  public int getMaxAllowedBucketValue() {
+<span class="nc" id="L117">    return MAX_BUCKET_VALUE;</span>
+  }
+
+  private Entry getEntry(int index) {
+<span class="nc" id="L121">    int totalBitsPerBucket = getTotalBitsPerBucket();</span>
+<span class="nc" id="L122">    int bucketMask = (1 &lt;&lt; totalBitsPerBucket) - 1;</span>
+<span class="nc" id="L123">    int bucketsPerSlot = getBucketsPerSlot();</span>
+
+<span class="nc" id="L125">    int slot = index / bucketsPerSlot;</span>
+<span class="nc" id="L126">    int offset = index % bucketsPerSlot;</span>
+
+<span class="nc" id="L128">    int bucketEntry = (int) ((slots[slot] &gt;&gt;&gt; (offset * totalBitsPerBucket)) &amp; bucketMask);</span>
+
+<span class="nc" id="L130">    return new Entry(bucketEntry &gt;&gt; BITS_PER_BUCKET, bucketEntry &amp; BUCKET_VALUE_MASK);</span>
+  }
+
+  private int getBucketsPerSlot() {
+<span class="nc" id="L134">    return Long.SIZE / getTotalBitsPerBucket();</span>
+  }
+
+  private int getTotalBitsPerBucket() {
+<span class="nc" id="L138">    return indexBits + BITS_PER_BUCKET;</span>
+  }
+
+  private void setEntry(int index, int bucket, int value) {
+<span class="nc" id="L142">    int totalBitsPerBucket = getTotalBitsPerBucket();</span>
+<span class="nc" id="L143">    long bucketMask = (1L &lt;&lt; totalBitsPerBucket) - 1;</span>
+<span class="nc" id="L144">    int bucketsPerSlot = getBucketsPerSlot();</span>
+
+<span class="nc" id="L146">    int slot = index / bucketsPerSlot;</span>
+<span class="nc" id="L147">    int offset = index % bucketsPerSlot;</span>
+
+<span class="nc" id="L149">    long bucketEntry = (bucket &lt;&lt; BITS_PER_BUCKET) | value;</span>
+
+<span class="nc" id="L151">    long bucketClearMask = bucketMask &lt;&lt; (offset * totalBitsPerBucket);</span>
+<span class="nc" id="L152">    long bucketSetMask = bucketEntry &lt;&lt; (offset * totalBitsPerBucket);</span>
+
+<span class="nc" id="L154">    slots[slot] = (slots[slot] &amp; ~bucketClearMask) | bucketSetMask;</span>
+<span class="nc" id="L155">  }</span>
+
+  public int estimateSizeInBytes() {
+<span class="nc" id="L158">    return estimateSizeInBytes(bucketCount, getNumberOfBuckets());</span>
+  }
+
+  public static int estimateSizeInBytes(int nonZeroBuckets, int totalBuckets) {
+<span class="nc" id="L162">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(totalBuckets),
+      &quot;totalBuckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L167">    int bits = Integer.numberOfTrailingZeros(totalBuckets); // log2(totalBuckets)</span>
+<span class="nc" id="L168">    int bucketsPerSlot = Long.SIZE / (bits + BITS_PER_BUCKET);</span>
+
+<span class="nc" id="L170">    return (nonZeroBuckets + bucketsPerSlot) / bucketsPerSlot * Long.SIZE / 8 + INSTANCE_SIZE;</span>
+  }
+
+  public long estimate() {
+<span class="nc" id="L174">    int totalBuckets = getNumberOfBuckets();</span>
+
+    // small cardinality estimate
+<span class="nc" id="L177">    int zeroBuckets = totalBuckets - bucketCount;</span>
+<span class="nc" id="L178">    return Math.round(totalBuckets * Math.log(totalBuckets * 1.0 / zeroBuckets));</span>
+  }
+
+  private void grow() {
+<span class="nc" id="L182">    slots = Arrays.copyOf(slots, slots.length + 1);</span>
+<span class="nc" id="L183">  }</span>
+
+  private int findBucket(int bucket) {
+<span class="nc" id="L186">    int low = 0;</span>
+<span class="nc" id="L187">    int high = bucketCount - 1;</span>
+
+<span class="nc bnc" id="L189" title="All 2 branches missed.">    while (low &lt;= high) {</span>
+<span class="nc" id="L190">      int middle = (low + high) &gt;&gt;&gt; 1;</span>
+
+<span class="nc" id="L192">      Entry middleBucket = getEntry(middle);</span>
+
+<span class="nc bnc" id="L194" title="All 2 branches missed.">      if (bucket &gt; middleBucket.getBucket()) {</span>
+<span class="nc" id="L195">        low = middle + 1;</span>
+<span class="nc bnc" id="L196" title="All 2 branches missed.">      } else if (bucket &lt; middleBucket.getBucket()) {</span>
+<span class="nc" id="L197">        high = middle - 1;</span>
+      } else {
+<span class="nc" id="L199">        return middle;</span>
+      }
+<span class="nc" id="L201">    }</span>
+
+<span class="nc" id="L203">    return -(low + 1); // not found... return insertion point</span>
+  }
+
+
+  private void insertAt(int index, int bucket, int value) {
+<span class="nc" id="L208">    int totalBitsPerBucket = getTotalBitsPerBucket();</span>
+<span class="nc" id="L209">    int bucketsPerSlot = getBucketsPerSlot();</span>
+
+<span class="nc" id="L211">    ++bucketCount;</span>
+
+<span class="nc bnc" id="L213" title="All 2 branches missed.">    if ((bucketCount + bucketsPerSlot - 1) / bucketsPerSlot &gt; slots.length) {</span>
+<span class="nc" id="L214">      grow();</span>
+    }
+
+    // the last slot that would have any data after the bucket is inserted
+<span class="nc" id="L218">    int lastUsedSlot = (bucketCount - 1) / bucketsPerSlot;</span>
+
+<span class="nc" id="L220">    int insertAtSlot = index / bucketsPerSlot;</span>
+<span class="nc" id="L221">    int insertOffset = index % bucketsPerSlot;</span>
+
+<span class="nc" id="L223">    long bucketMask = (1L &lt;&lt; totalBitsPerBucket) - 1;</span>
+
+    // shift all buckets one position to the right
+<span class="nc bnc" id="L226" title="All 2 branches missed.">    for (int i = lastUsedSlot; i &gt; insertAtSlot; --i) {</span>
+<span class="nc" id="L227">      int overflow = (int) ((slots[i - 1] &gt;&gt;&gt; ((bucketsPerSlot - 1) * totalBitsPerBucket)) &amp;</span>
+                              bucketMask);
+<span class="nc" id="L229">      slots[i] = (slots[i] &lt;&lt; totalBitsPerBucket) | overflow;</span>
+    }
+
+<span class="nc" id="L232">    long old = slots[insertAtSlot];</span>
+
+<span class="nc" id="L234">    long bottomMask = (1L &lt;&lt; (insertOffset * totalBitsPerBucket)) - 1;</span>
+<span class="nc" id="L235">    long topMask = 0;</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">    if (insertOffset &lt; this.getBucketsPerSlot() - 1) {</span>
+      // to get around the fact that X &lt;&lt; 64 == X, not 0
+<span class="nc" id="L238">      topMask = (0xFFFFFFFFFFFFFFFFL &lt;&lt; ((insertOffset + 1) * totalBitsPerBucket));</span>
+    }
+<span class="nc" id="L240">    long bucketSetMask = ((((long) bucket) &lt;&lt; BITS_PER_BUCKET) | value) &lt;&lt; (insertOffset *</span>
+      totalBitsPerBucket);
+
+<span class="nc" id="L243">    slots[insertAtSlot] = ((old &lt;&lt; totalBitsPerBucket) &amp; topMask) | bucketSetMask |</span>
+      (old &amp; bottomMask);
+<span class="nc" id="L245">  }</span>
+
+  private static int countNonZeroBuckets(int[] buckets) {
+<span class="nc" id="L248">    int count = 0;</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">    for (Integer bucket : buckets) {</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">      if (bucket &gt; 0) {</span>
+<span class="nc" id="L251">        ++count;</span>
+      }
+    }
+
+<span class="nc" id="L255">    return count;</span>
+  }
+
+  private static class Entry {
+    private final int bucket;
+    private final int value;
+
+<span class="nc" id="L262">    private Entry(int bucket, int value) {</span>
+<span class="nc" id="L263">      this.bucket = bucket;</span>
+<span class="nc" id="L264">      this.value = value;</span>
+<span class="nc" id="L265">    }</span>
+
+    public int getBucket() {
+<span class="nc" id="L268">      return bucket;</span>
+    }
+
+    public int getValue() {
+<span class="nc" id="L272">      return value;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

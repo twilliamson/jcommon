@@ -1,0 +1,376 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StatsManager.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">StatsManager.java</span></div><h1>StatsManager.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.lang.IllegalArgumentException;
+
+import org.apache.log4j.Logger;
+
+
+/**
+ * See com.facebook.fb303.stats.HistoryManager for more info.
+ *
+ * The parameters &quot;shortName&quot; refer to a stat name such as &quot;queries&quot;
+ * or &quot;cpu_load&quot;, and &quot;fullName&quot; refer to the longer
+ * &quot;queries.sum.600&quot;, &quot;cpu_load.avg.3600&quot;.
+ */
+
+/**
+ * Each stat's name corresponds to a single underlying counter, but
+ * each counter can be exported for different uses (ExportTypes).  For
+ * details see com.facebook.fb303.stats.HistoryManager.
+ */
+public class StatsManager implements HistoryManager {
+<span class="fc" id="L42">  private static Logger logger_ = Logger.getLogger(StatsManager.class);</span>
+
+  private ConcurrentHashMap&lt;String, Integer&gt; typeMap_;
+  // todo: handle mutliple shortName/types
+  private ConcurrentHashMap&lt;String, MultiWindowGauge&gt; counterMap_;
+
+  /**
+   * Creates a StatsMgr instance with default settings for the internal
+   * ConcurrentHashMaps.
+   */
+  public StatsManager() {
+<span class="fc" id="L53">    this(16, 0.75f, 16);</span>
+<span class="fc" id="L54">  }</span>
+
+  /**
+   * Creates a StatsMgr instance with the specified initial capacity and
+   * concurrency level for the ConcurrentHashMaps used internally.
+   *
+   * @param initialNumKeys    expected initial number of keys
+   * @param loadFactor        load factor of the internal hash maps
+   * @param concurrencyLevel  estimated number of concurrently updating threads
+   */
+<span class="fc" id="L64">  public StatsManager(int initialNumKeys, float loadFactor, int concurrencyLevel) {</span>
+<span class="fc" id="L65">    logger_.trace(&quot;StatsMgr Created&quot;);</span>
+<span class="fc" id="L66">    this.typeMap_ = new ConcurrentHashMap&lt;String, Integer&gt;(</span>
+        initialNumKeys,
+        loadFactor,
+        concurrencyLevel);
+<span class="fc" id="L70">    this.counterMap_ = new ConcurrentHashMap&lt;String, MultiWindowGauge&gt;(</span>
+        initialNumKeys,
+        loadFactor,
+        concurrencyLevel);
+<span class="fc" id="L74">  }</span>
+
+  private void ensureStat(String shortName) {
+<span class="fc bfc" id="L77" title="All 2 branches covered.">    if (counterMap_.containsKey(shortName)) {</span>
+<span class="fc" id="L78">      return;</span>
+    }
+<span class="fc" id="L80">    MultiWindowGauge mwg = new MultiWindowGauge();</span>
+<span class="fc" id="L81">    MultiWindowGauge wasGauge = counterMap_.putIfAbsent(shortName, mwg);</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">    if (wasGauge == null) {</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">      if (logger_.isDebugEnabled()) {</span>
+<span class="nc" id="L84">        logger_.debug(&quot;Created stat &quot; + shortName);</span>
+      }
+    } else {
+<span class="nc bnc" id="L87" title="All 2 branches missed.">      if (logger_.isTraceEnabled()) {</span>
+<span class="nc" id="L88">        logger_.trace(&quot;almost accidentally created stat&quot; + shortName +</span>
+                      &quot; twice.  phew...&quot;);
+      }
+    }
+<span class="fc" id="L92">  }</span>
+
+  private void ensureType(String shortName, ExportType etype) {
+<span class="fc" id="L95">    boolean hasType = typeMap_.containsKey(shortName);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">    if (!hasType) {</span>
+<span class="fc" id="L97">      Integer prior = typeMap_.putIfAbsent(shortName, etype.value());</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">      if (prior == null) {</span>
+<span class="fc" id="L99">        return;</span>
+      }
+      // some other thread got there first
+    }
+<span class="fc" id="L103">    Integer bitmask = ExportType.NONE.value();</span>
+    boolean done;
+    Integer newValue;
+<span class="fc" id="L106">    int tries = 0;</span>
+    do {
+<span class="fc" id="L108">      bitmask = typeMap_.get(shortName);</span>
+<span class="fc" id="L109">      newValue = bitmask | etype.value();</span>
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">      if (bitmask == newValue) {</span>
+<span class="nc" id="L111">        break;</span>
+      }
+<span class="fc" id="L113">      done = typeMap_.replace(shortName, bitmask, newValue);</span>
+<span class="fc" id="L114">      tries++;</span>
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">    } while(!done);</span>
+
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">    if (logger_.isTraceEnabled()) {</span>
+<span class="nc" id="L118">      logger_.trace(&quot;Updated type for &quot; + shortName +</span>
+                    &quot;, added &quot; + etype +
+                    &quot;, was &quot; + bitmask +
+                    &quot;, now &quot; + newValue +
+                    &quot; (after &quot; + tries + &quot; tries)&quot;);
+    }
+<span class="fc" id="L124">    return;</span>
+  }
+
+  public void addStatExportType(String shortName, ExportType etype) {
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">    if (shortName == null) {</span>
+<span class="nc" id="L129">      logger_.error(&quot;Null value passed as key&quot;);</span>
+<span class="nc" id="L130">      return;</span>
+    }
+<span class="pc bpc" id="L132" title="1 of 2 branches missed.">    if (etype == null) {</span>
+<span class="nc" id="L133">      logger_.error(&quot;Null value passed as exportType&quot;);</span>
+<span class="nc" id="L134">      return;</span>
+    }
+<span class="fc" id="L136">    ensureStat(shortName);</span>
+<span class="fc" id="L137">    ensureType(shortName, etype);</span>
+<span class="fc" id="L138">  }</span>
+
+  public void addStatValue(String shortName, long delta) {
+<span class="fc bfc" id="L141" title="All 2 branches covered.">    if (!counterMap_.containsKey(shortName)) {</span>
+<span class="fc" id="L142">      addStatExportType(shortName, ExportType.AVG);</span>
+    }
+<span class="fc" id="L144">    MultiWindowGauge stat = counterMap_.get(shortName);</span>
+<span class="fc" id="L145">    stat.add(delta);</span>
+<span class="fc" id="L146">  }</span>
+
+  // fb303
+  public long getCounter(String fullName) {
+    // todo: convert to a more intelligent table/map version
+<span class="fc" id="L151">    int lastDot = fullName.lastIndexOf('.');</span>
+<span class="fc" id="L152">    int preLastDot = -1;</span>
+<span class="fc" id="L153">    String shortName = null;</span>
+<span class="fc" id="L154">    String ending = null;</span>
+<span class="fc" id="L155">    String ending2 = null;</span>
+
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">    if (lastDot &gt; 0) {</span>
+<span class="fc" id="L158">      preLastDot = fullName.lastIndexOf('.', lastDot-1);</span>
+<span class="fc" id="L159">      ending = fullName.substring(lastDot);</span>
+    }
+
+<span class="fc bfc" id="L162" title="All 2 branches covered.">    if (preLastDot &gt; 0) {</span>
+<span class="fc" id="L163">      shortName = fullName.substring(0, preLastDot);</span>
+<span class="fc" id="L164">      ending2 = fullName.substring(preLastDot);</span>
+    } else {
+<span class="fc" id="L166">      shortName = fullName.substring(0, lastDot);</span>
+    }
+
+    try {
+<span class="fc bfc" id="L170" title="All 2 branches covered.">      if (ending.equals(&quot;.60&quot;)) {</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        if (ending2.equals(&quot;.sum.60&quot;)) {</span>
+<span class="fc" id="L172">          return counterMap_.get(shortName).getMinuteSum();</span>
+        }
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">        if (ending2.equals(&quot;.avg.60&quot;)) {</span>
+<span class="fc" id="L175">          return counterMap_.get(shortName).getMinuteAvg();</span>
+        }
+<span class="nc bnc" id="L177" title="All 2 branches missed.">        if (ending2.equals(&quot;.rate.60&quot;)) {</span>
+<span class="nc" id="L178">          return counterMap_.get(shortName).getMinuteRate();</span>
+        }
+<span class="nc bnc" id="L180" title="All 2 branches missed.">        if (ending2.equals(&quot;.count.60&quot;)) {</span>
+<span class="nc" id="L181">          return counterMap_.get(shortName).getMinuteSum();</span>
+        }
+      }
+
+<span class="fc bfc" id="L185" title="All 2 branches covered.">      if (ending.equals(&quot;.600&quot;)) {</span>
+<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (ending2.equals(&quot;.sum.600&quot;)) {</span>
+<span class="fc" id="L187">          return counterMap_.get(shortName).getTenMinuteSum();</span>
+        }
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">        if (ending2.equals(&quot;.avg.600&quot;)) {</span>
+<span class="fc" id="L190">          return counterMap_.get(shortName).getTenMinuteAvg();</span>
+        }
+<span class="nc bnc" id="L192" title="All 2 branches missed.">        if (ending2.equals(&quot;.rate.600&quot;)) {</span>
+<span class="nc" id="L193">          return counterMap_.get(shortName).getTenMinuteRate();</span>
+        }
+<span class="nc bnc" id="L195" title="All 2 branches missed.">        if (ending2.equals(&quot;.count.600&quot;)) {</span>
+<span class="nc" id="L196">          return counterMap_.get(shortName).getTenMinuteSum();</span>
+        }
+      }
+
+<span class="fc bfc" id="L200" title="All 2 branches covered.">      if (ending.equals(&quot;.3600&quot;)) {</span>
+<span class="fc bfc" id="L201" title="All 2 branches covered.">        if (ending2.equals(&quot;.sum.3600&quot;)) {</span>
+<span class="fc" id="L202">          return counterMap_.get(shortName).getHourSum();</span>
+        }
+<span class="pc bpc" id="L204" title="1 of 2 branches missed.">        if (ending2.equals(&quot;.avg.3600&quot;)) {</span>
+<span class="fc" id="L205">          return counterMap_.get(shortName).getHourAvg();</span>
+        }
+<span class="nc bnc" id="L207" title="All 2 branches missed.">        if (ending2.equals(&quot;.rate.3600&quot;)) {</span>
+<span class="nc" id="L208">          return counterMap_.get(shortName).getHourRate();</span>
+        }
+<span class="nc bnc" id="L210" title="All 2 branches missed.">        if (ending2.equals(&quot;.count.3600&quot;)) {</span>
+<span class="nc" id="L211">          return counterMap_.get(shortName).getHourSum();</span>
+        }
+      }
+
+<span class="fc bfc" id="L215" title="All 2 branches covered.">      if (fullName.endsWith(&quot;.sum&quot;)) {</span>
+<span class="fc" id="L216">        return counterMap_.get(shortName).getAllTimeSum();</span>
+      }
+<span class="fc bfc" id="L218" title="All 2 branches covered.">      if (fullName.endsWith(&quot;.avg&quot;)) {</span>
+<span class="fc" id="L219">        return counterMap_.get(shortName).getAllTimeAvg();</span>
+      }
+<span class="pc bpc" id="L221" title="1 of 2 branches missed.">      if (fullName.endsWith(&quot;.rate&quot;)) {</span>
+<span class="nc" id="L222">        return counterMap_.get(shortName).getAllTimeRate();</span>
+      }
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">      if (fullName.endsWith(&quot;.count&quot;)) {</span>
+<span class="fc" id="L225">        return counterMap_.get(shortName).getAllTimeSum();</span>
+      }
+<span class="nc" id="L227">    } catch(Exception e) {</span>
+<span class="nc" id="L228">      throw new IllegalArgumentException(&quot;Stat name '&quot; + shortName +</span>
+        &quot;' not found for '&quot; + ending2 + &quot;' or '&quot; + ending + &quot;'&quot;);
+<span class="nc" id="L230">    }</span>
+
+<span class="nc" id="L232">    throw new IllegalArgumentException(&quot;Stat name argument '&quot; +</span>
+                                       fullName + &quot;' not found&quot;);
+  }
+
+  /**
+   * fb303: returns a new map of results and any missing keys will
+   * be missing from output map.
+   */
+  public Map&lt;String, Long&gt; getSelectedCounters(List&lt;String&gt; keys) {
+<span class="nc" id="L241">    Map&lt;String, Long&gt; result = new HashMap&lt;String, Long&gt;();</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">    for (String key : keys) {</span>
+      try {
+<span class="nc" id="L244">        result.put(key, getCounter(key));</span>
+<span class="nc" id="L245">      } catch (IllegalArgumentException e) {</span>
+        // okay, result will be missing for this
+<span class="nc" id="L247">      }</span>
+<span class="nc" id="L248">    }</span>
+<span class="nc" id="L249">    return result;</span>
+  }
+
+  /**
+   * fb303-support
+   * @param fullName  key with the .sum.60 parts, etc
+   */
+  public boolean hasCounter(String fullName) {
+    try {
+<span class="nc" id="L258">      getCounter(fullName);</span>
+<span class="nc" id="L259">      return true;</span>
+<span class="nc" id="L260">    } catch(IllegalArgumentException e) {</span>
+<span class="nc" id="L261">      return false;</span>
+    }
+  }
+
+  /**
+   * Extension
+   * @param shortName  The stat name used with addStatExportType
+   *                   does NOT have the .sum.60 parts, etc
+   */
+  public boolean containsKey(String shortName) {
+<span class="nc" id="L271">    return counterMap_.containsKey(shortName);</span>
+  }
+
+  /**
+   * fb303
+   */
+  public Map&lt;String, Long&gt; getCounters()
+  {
+<span class="fc" id="L279">    Map&lt;String, Long&gt; result = new HashMap&lt;String, Long&gt;();</span>
+    String fullname;
+    long value;
+<span class="fc" id="L282">    Set&lt;String&gt; typeKeys = typeMap_.keySet();</span>
+<span class="fc bfc" id="L283" title="All 2 branches covered.">    for (String name : typeKeys) {</span>
+<span class="fc" id="L284">      int bitmask = typeMap_.get(name);</span>
+<span class="fc" id="L285">      MultiWindowGauge stat = counterMap_.get(name);</span>
+<span class="fc bfc" id="L286" title="All 2 branches covered.">      for (ExportType type : ExportType.values()) {</span>
+<span class="fc bfc" id="L287" title="All 2 branches covered.">        if ( (bitmask &amp; type.value()) == 0) {</span>
+<span class="fc" id="L288">          continue;</span>
+        }
+        // minute
+<span class="fc" id="L291">        fullname = String.format(&quot;%s.%s.60&quot;, name, type);</span>
+<span class="pc bpc" id="L292" title="1 of 5 branches missed.">        switch (type) {</span>
+        case SUM:
+<span class="fc" id="L294">          value = stat.getMinuteSum();</span>
+<span class="fc" id="L295">          break;</span>
+        case COUNT:
+<span class="fc" id="L297">          value = stat.getMinuteSum();</span>
+<span class="fc" id="L298">          break;</span>
+        case AVG:
+<span class="fc" id="L300">          value = stat.getMinuteAvg();</span>
+<span class="fc" id="L301">          break;</span>
+        case RATE:
+<span class="fc" id="L303">          value = stat.getMinuteRate();</span>
+<span class="fc" id="L304">          break;</span>
+        default:
+<span class="nc" id="L306">          throw new IndexOutOfBoundsException(&quot;Bad type&quot;);</span>
+        }
+<span class="fc" id="L308">        result.put(fullname, value);</span>
+
+        // 10 min
+<span class="fc" id="L311">        fullname = String.format(&quot;%s.%s.600&quot;, name, type);</span>
+<span class="pc bpc" id="L312" title="1 of 5 branches missed.">        switch (type) {</span>
+        case SUM:
+<span class="fc" id="L314">          value = stat.getTenMinuteSum();</span>
+<span class="fc" id="L315">          break;</span>
+        case COUNT:
+<span class="fc" id="L317">          value = stat.getTenMinuteSum();</span>
+<span class="fc" id="L318">          break;</span>
+        case AVG:
+<span class="fc" id="L320">          value = stat.getTenMinuteAvg();</span>
+<span class="fc" id="L321">          break;</span>
+        case RATE:
+<span class="fc" id="L323">          value = stat.getTenMinuteRate();</span>
+<span class="fc" id="L324">          break;</span>
+        default:
+<span class="nc" id="L326">          throw new IndexOutOfBoundsException(&quot;Bad type&quot;);</span>
+        }
+<span class="fc" id="L328">        result.put(fullname, value);</span>
+
+        // hour
+<span class="fc" id="L331">        fullname = String.format(&quot;%s.%s.3600&quot;, name, type);</span>
+<span class="pc bpc" id="L332" title="1 of 5 branches missed.">        switch (type) {</span>
+        case SUM:
+<span class="fc" id="L334">          value = stat.getHourSum();</span>
+<span class="fc" id="L335">          break;</span>
+        case COUNT:
+<span class="fc" id="L337">          value = stat.getHourSum();</span>
+<span class="fc" id="L338">          break;</span>
+        case AVG:
+<span class="fc" id="L340">          value = stat.getHourAvg();</span>
+<span class="fc" id="L341">          break;</span>
+        case RATE:
+<span class="fc" id="L343">          value = stat.getHourRate();</span>
+<span class="fc" id="L344">          break;</span>
+        default:
+<span class="nc" id="L346">          throw new IndexOutOfBoundsException(&quot;Bad type&quot;);</span>
+        }
+<span class="fc" id="L348">        result.put(fullname, value);</span>
+
+        // all time
+<span class="fc" id="L351">        fullname = String.format(&quot;%s.%s&quot;, name, type);</span>
+<span class="pc bpc" id="L352" title="1 of 5 branches missed.">        switch (type) {</span>
+        case SUM:
+<span class="fc" id="L354">          value = stat.getAllTimeSum();</span>
+<span class="fc" id="L355">          break;</span>
+        case COUNT:
+<span class="fc" id="L357">          value = stat.getAllTimeSum();</span>
+<span class="fc" id="L358">          break;</span>
+        case AVG:
+<span class="fc" id="L360">          value = stat.getAllTimeAvg();</span>
+<span class="fc" id="L361">          break;</span>
+        case RATE:
+<span class="fc" id="L363">          value = stat.getAllTimeRate();</span>
+<span class="fc" id="L364">          break;</span>
+        default:
+<span class="nc" id="L366">          throw new IndexOutOfBoundsException(&quot;Bad type&quot;);</span>
+        }
+<span class="fc" id="L368">        result.put(fullname, value);</span>
+
+      } // for all export types
+<span class="fc" id="L371">    } // for all window stat names</span>
+<span class="fc" id="L372">    return result;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

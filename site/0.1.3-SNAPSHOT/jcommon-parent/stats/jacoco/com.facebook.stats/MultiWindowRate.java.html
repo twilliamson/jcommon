@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MultiWindowRate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">MultiWindowRate.java</span></div><h1>MultiWindowRate.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeUtils;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+
+public class MultiWindowRate implements ReadableMultiWindowRate, WritableMultiWindowStat {
+  private static final int DEFAULT_TIME_BUCKET_SIZE_MILLIS = 6000; // 6 seconds
+  // all-time counter is a windowed counter that is effectively unbounded
+  private final CompositeSum allTimeCounter;
+  private final CompositeSum hourCounter;
+  private final CompositeSum tenMinuteCounter;
+  private final CompositeSum minuteCounter;
+  private final EventRate hourRate;
+  private final EventRate tenMinuteRate;
+  private final EventRate minuteRate;
+  private final ReadableDateTime start;
+<span class="fc" id="L34">  private final Object rollLock = new Object();</span>
+  private final int timeBucketSizeMillis;
+
+  private volatile EventCounterIf&lt;EventCounter&gt; currentCounter;
+
+  MultiWindowRate(int timeBucketSizeMillis) {
+<span class="fc" id="L40">    this(</span>
+      newCompositeEventCounter(Integer.MAX_VALUE),
+      newCompositeEventCounter(60),
+      newCompositeEventCounter(10),
+      newCompositeEventCounter(1),
+      new DateTime(),
+      timeBucketSizeMillis
+    );
+<span class="fc" id="L48">  }</span>
+
+  MultiWindowRate(
+    CompositeSum allTimeCounter,
+    CompositeSum hourCounter,
+    CompositeSum tenMinuteCounter,
+    CompositeSum minuteCounter,
+    ReadableDateTime start,
+    int timeBucketSizeMillis
+<span class="fc" id="L57">  ) {</span>
+<span class="fc" id="L58">    this.allTimeCounter = allTimeCounter;</span>
+<span class="fc" id="L59">    this.hourCounter = hourCounter;</span>
+<span class="fc" id="L60">    this.tenMinuteCounter = tenMinuteCounter;</span>
+<span class="fc" id="L61">    this.minuteCounter = minuteCounter;</span>
+<span class="fc" id="L62">    this.start = start;</span>
+<span class="fc" id="L63">    this.timeBucketSizeMillis = timeBucketSizeMillis;</span>
+<span class="fc" id="L64">    hourRate =</span>
+      newEventRate(hourCounter, Duration.standardMinutes(60), start);
+<span class="fc" id="L66">    tenMinuteRate =</span>
+      newEventRate(tenMinuteCounter, Duration.standardMinutes(10), start);
+<span class="fc" id="L68">    minuteRate =</span>
+      newEventRate(minuteCounter, Duration.standardMinutes(1), start);
+<span class="fc" id="L70">    currentCounter = nextCurrentCounter(start.toDateTime());</span>
+<span class="fc" id="L71">  }</span>
+
+  public MultiWindowRate() {
+<span class="fc" id="L74">    this(DEFAULT_TIME_BUCKET_SIZE_MILLIS);</span>
+<span class="fc" id="L75">  }</span>
+
+  private static CompositeSum newCompositeEventCounter(int minutes) {
+<span class="fc" id="L78">    return new CompositeSum(Duration.standardMinutes(minutes));</span>
+  }
+
+  private EventRate newEventRate(
+    EventCounterIf&lt;EventCounter&gt; counter, Duration windowSize, ReadableDateTime start
+  ) {
+<span class="fc" id="L84">    return new EventRateImpl(counter, windowSize, start);</span>
+  }
+
+  @Override
+  public void add(long delta) {
+<span class="fc" id="L89">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L90">    currentCounter.add(delta);</span>
+<span class="fc" id="L91">  }</span>
+
+  private void rollCurrentIfNeeded() {
+    //do outside the synchronized block
+<span class="fc" id="L95">    long now = DateTimeUtils.currentTimeMillis();</span>
+    // this is false for the majority of calls, so skip lock acquisition
+<span class="fc bfc" id="L97" title="All 2 branches covered.">    if (currentCounter.getEnd().getMillis() &lt;= now) {</span>
+<span class="fc" id="L98">      synchronized (rollLock) {</span>
+        // lock and re-check
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        if (currentCounter.getEnd().getMillis() &lt;= now) {</span>
+<span class="fc" id="L101">          currentCounter = nextCurrentCounter(new DateTime(now));</span>
+        }
+<span class="pc" id="L103">      }</span>
+    }
+<span class="fc" id="L105">  }</span>
+
+  @Override
+  public long getMinuteSum() {
+<span class="fc" id="L109">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L111">    return minuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getMinuteRate() {
+<span class="fc" id="L116">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L118">    return minuteRate.getValue();</span>
+  }
+
+  @Override
+  public long getTenMinuteSum() {
+<span class="fc" id="L123">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L125">    return tenMinuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getTenMinuteRate() {
+<span class="fc" id="L130">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L132">    return tenMinuteRate.getValue();</span>
+  }
+
+  @Override
+  public long getHourSum() {
+<span class="fc" id="L137">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L139">    return hourCounter.getValue();</span>
+  }
+
+  @Override
+  public long getHourRate() {
+<span class="fc" id="L144">    rollCurrentIfNeeded();</span>
+
+<span class="fc" id="L146">    return hourRate.getValue();</span>
+  }
+
+  @Override
+  public long getAllTimeSum() {
+<span class="fc" id="L151">    return allTimeCounter.getValue();</span>
+  }
+
+  @Override
+  public long getAllTimeRate() {
+<span class="fc" id="L156">    Duration sinceStart = new Duration(start, getNow());</span>
+
+<span class="fc bfc" id="L158" title="All 2 branches covered.">    if (sinceStart.getStandardSeconds() == 0) {</span>
+<span class="fc" id="L159">      return 0;</span>
+    }
+
+<span class="fc" id="L162">    return allTimeCounter.getValue() / sinceStart.getStandardSeconds();</span>
+  }
+
+  protected ReadableDateTime getNow() {
+<span class="fc" id="L166">    return new DateTime();</span>
+  }
+
+  // current
+  private EventCounterIf&lt;EventCounter&gt; nextCurrentCounter(ReadableDateTime now) {
+<span class="fc" id="L171">    EventCounter eventCounter =</span>
+      new EventCounterImpl(now, now.toDateTime().plusMillis(timeBucketSizeMillis));
+
+<span class="fc" id="L174">    allTimeCounter.addEventCounter(eventCounter);</span>
+<span class="fc" id="L175">    hourCounter.addEventCounter(eventCounter);</span>
+<span class="fc" id="L176">    tenMinuteCounter.addEventCounter(eventCounter);</span>
+<span class="fc" id="L177">    minuteCounter.addEventCounter(eventCounter);</span>
+
+<span class="fc" id="L179">    return eventCounter;</span>
+  }
+
+  public MultiWindowRate merge(MultiWindowRate rate) {
+<span class="pc bpc" id="L183" title="1 of 2 branches missed.">    return new MultiWindowRate(</span>
+      (CompositeSum)allTimeCounter.merge(rate.allTimeCounter),
+      (CompositeSum)hourCounter.merge(rate.hourCounter),
+      (CompositeSum)tenMinuteCounter.merge(rate.tenMinuteCounter),
+      (CompositeSum)minuteCounter.merge(rate.minuteCounter),
+      start.isBefore(rate.start) ? start : rate.start,
+      timeBucketSizeMillis
+    );
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ArrayBasedIntegerTopK.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.topk</a> &gt; <span class="el_source">ArrayBasedIntegerTopK.java</span></div><h1>ArrayBasedIntegerTopK.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.topk;
+
+import com.google.common.base.Preconditions;
+import com.google.common.primitives.Longs;
+
+import java.util.Comparator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.PriorityQueue;
+
+/*
+ * Array-based implementation of integer key streaming top-k.
+ * This version is optimized for fast update of the counts.
+ * Time complexity of add() is O(1).
+ * Time complexity of getTopK() is O(n log k).
+ * Space usage is O(n).
+ * (n = keySpaceSize)
+ */
+public class ArrayBasedIntegerTopK implements TopK&lt;Integer&gt; {
+  private final int k;
+  // Java Language SE 7 spec, section 4.12.5 guarantees initial values of 0 for each entry
+  private final long[] counts;
+
+<span class="fc" id="L39">  public ArrayBasedIntegerTopK(int keySpaceSize, int k) {</span>
+<span class="fc" id="L40">    this.k = k;</span>
+<span class="fc" id="L41">    counts = new long[keySpaceSize];</span>
+<span class="fc" id="L42">  }</span>
+
+  @Override
+  public synchronized void add(Integer key, long count) {
+<span class="fc" id="L46">    Preconditions.checkNotNull(key, &quot;key can't be null&quot;);</span>
+<span class="fc" id="L47">    Preconditions.checkElementIndex(key, counts.length, &quot;key&quot;);</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">    Preconditions.checkArgument(count &gt;= 0, &quot;count to add must be non-negative, got %s&quot;, count);</span>
+
+<span class="fc" id="L50">    counts[key] += count;</span>
+<span class="fc" id="L51">  }</span>
+
+  @Override
+  public List&lt;Integer&gt; getTopK() {
+<span class="fc" id="L55">    Comparator&lt;Integer&gt; comparator = new Comparator&lt;Integer&gt;() {</span>
+      public int compare(Integer i, Integer j) {
+<span class="fc" id="L57">        return Longs.compare(counts[i], counts[j]);</span>
+      }
+    };
+<span class="fc" id="L60">    PriorityQueue&lt;Integer&gt; topK = new PriorityQueue&lt;Integer&gt;(k, comparator);</span>
+
+<span class="fc bfc" id="L62" title="All 2 branches covered.">    for (int key = 0; key &lt; counts.length; ++key) {</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">      if (topK.size() &lt; k) {</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (counts[key] &gt; 0) {</span>
+<span class="fc" id="L65">          topK.offer(key);</span>
+        }
+<span class="fc bfc" id="L67" title="All 2 branches covered.">      } else if (counts[key] &gt; counts[topK.peek()]) {</span>
+<span class="fc" id="L68">        topK.poll();</span>
+<span class="fc" id="L69">        topK.offer(key);</span>
+      }
+    }
+
+<span class="fc" id="L73">    LinkedList&lt;Integer&gt; sortedTopK = new LinkedList&lt;Integer&gt;();</span>
+
+<span class="fc bfc" id="L75" title="All 2 branches covered.">    while (!topK.isEmpty()) {</span>
+<span class="fc" id="L76">      sortedTopK.addFirst(topK.poll());</span>
+    }
+<span class="fc" id="L78">    return sortedTopK;</span>
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

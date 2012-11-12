@@ -1,0 +1,81 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+stats,com.facebook.stats,SumEventCounter,24,0,0,0,7,0,4,0,4,0
+stats,com.facebook.stats,MultiWindowSpread,0,45,0,0,0,14,0,6,0,6
+stats,com.facebook.stats,QuantileDigest,19,1009,23,83,2,183,23,59,0,29
+stats,com.facebook.stats,CompositeMax,35,38,2,2,3,11,2,5,1,4
+stats,com.facebook.stats,StatsManager.new Object() {...},4,29,0,0,0,1,0,1,0,1
+stats,com.facebook.stats,CompositeGaugeCounter,89,96,6,8,13,28,6,10,2,7
+stats,com.facebook.stats,CompositeMin,35,38,2,2,3,11,2,5,1,4
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},0,98,0,4,0,12,0,4,0,2
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},2,21,1,1,1,4,1,2,0,2
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},2,21,1,1,1,4,1,2,0,2
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},0,115,0,20,0,22,0,12,0,2
+stats,com.facebook.stats,HistoryManager.ExportType,5,78,0,0,0,5,1,5,1,5
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},0,61,0,4,0,9,0,4,0,2
+stats,com.facebook.stats,MultiWindowDistribution.Quantile,82,0,0,0,12,0,7,0,7,0
+stats,com.facebook.stats,MultiWindowGauge,43,287,7,5,5,66,6,25,0,25
+stats,com.facebook.stats,MultiWindowMax,33,146,1,3,1,36,2,11,1,10
+stats,com.facebook.stats,MultiWindowRate,8,265,2,6,0,54,2,20,0,18
+stats,com.facebook.stats,QuantileDigest.TraversalOrder,9,29,0,0,0,2,2,2,2,2
+stats,com.facebook.stats,DefaultGaugeCounter,34,85,5,3,8,23,6,8,2,8
+stats,com.facebook.stats,EventCounterImpl,18,76,2,4,4,21,3,8,1,7
+stats,com.facebook.stats,MinEventCounter.new AssociativeAggregation() {...},0,7,0,0,0,2,0,2,0,2
+stats,com.facebook.stats,RealtimeClock,0,5,0,0,0,2,0,2,0,2
+stats,com.facebook.stats,ShardedConcurrentCounter,163,0,8,0,32,0,13,0,9,0
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},0,36,0,2,0,6,0,3,0,2
+stats,com.facebook.stats,MultiWindowDistribution.Quantile.new Function() {...},7,0,0,0,2,0,2,0,2,0
+stats,com.facebook.stats,QuantileDigest.new QuantileDigest.Callback() {...},0,32,0,4,0,6,0,4,0,2
+stats,com.facebook.stats,ShardedConcurrentCounter.CounterShard,43,0,2,0,11,0,4,0,3,0
+stats,com.facebook.stats,MaxEventCounter.new AssociativeAggregation() {...},0,7,0,0,0,2,0,2,0,2
+stats,com.facebook.stats,CounterCacher.ThreadFactory,30,0,0,0,4,0,2,0,2,0
+stats,com.facebook.stats,DefaultGaugeCounterFactory,0,14,0,0,0,3,0,3,0,3
+stats,com.facebook.stats,CounterCacher,86,0,4,0,26,0,9,0,7,0
+stats,com.facebook.stats,CompositeSum,18,32,1,1,1,7,1,4,0,4
+stats,com.facebook.stats,MinEventCounter,0,18,0,0,0,5,0,3,0,3
+stats,com.facebook.stats,DecayCounter,150,0,8,0,29,0,13,0,9,0
+stats,com.facebook.stats,AbstractCompositeSum,0,55,0,6,0,17,0,6,0,3
+stats,com.facebook.stats,AbstractCompositeCounter,53,416,6,40,10,76,12,31,6,14
+stats,com.facebook.stats,AssociativeAggregationCounter,23,91,4,4,5,22,5,6,1,6
+stats,com.facebook.stats,StatsManager,235,514,34,60,42,128,29,36,3,9
+stats,com.facebook.stats,SumEventCounter.new AssociativeAggregation() {...},7,0,0,0,2,0,2,0,2,0
+stats,com.facebook.stats,FastGaugeCounterFactory,14,0,0,0,3,0,3,0,3,0
+stats,com.facebook.stats,CounterCacher.CounterCacherRunner,112,0,4,0,24,0,4,0,2,0
+stats,com.facebook.stats,ExponentialDecay,5,25,3,3,2,3,4,1,1,1
+stats,com.facebook.stats,EventRateImpl,0,63,0,4,0,18,0,7,0,5
+stats,com.facebook.stats,MultiWindowMin,33,146,1,3,1,36,2,11,1,10
+stats,com.facebook.stats,FastGaugeCounter,130,0,8,0,32,0,14,0,10,0
+stats,com.facebook.stats,QuantileDigest.Bucket,53,56,9,5,10,12,9,4,2,4
+stats,com.facebook.stats,MultiWindowDistribution,125,0,4,0,27,0,13,0,11,0
+stats,com.facebook.stats,MaxEventCounter,0,18,0,0,0,5,0,3,0,3
+stats,com.facebook.stats,QuantileDigest.Node,43,89,6,10,1,15,5,12,1,8
+stats,com.facebook.stats.topk,TreeBasedIntegerTopK,0,212,0,12,0,33,0,9,0,3
+stats,com.facebook.stats.topk,ArrayBasedIntegerTopK.new Comparator() {...},0,20,0,0,0,2,0,2,0,2
+stats,com.facebook.stats.topk,HashBasedTopK,0,125,0,12,0,24,0,9,0,3
+stats,com.facebook.stats.topk,HashBasedTopK.new Comparator() {...},0,22,0,0,0,2,0,2,0,2
+stats,com.facebook.stats.topk,ArrayBasedIntegerTopK,0,122,0,12,0,22,0,9,0,3
+stats,com.facebook.stats.topk,TreeBasedTopK,0,189,0,14,0,35,0,10,0,3
+stats,com.facebook.stats.mx,Stats,217,400,13,29,45,80,27,31,16,21
+stats,com.facebook.stats.mx,Stats.StringProducer,0,9,0,0,0,4,0,2,0,2
+stats,com.facebook.stats.mx,JVMStatsExporter.MBeanLongCompositeValueFetcher,0,32,1,3,0,9,1,3,0,2
+stats,com.facebook.stats.mx,TemplateStatType,144,0,18,0,21,0,15,0,6,0
+stats,com.facebook.stats.mx,StatsUtil,282,347,13,3,53,39,16,9,9,8
+stats,com.facebook.stats.mx,JVMStatsExporter,0,271,5,27,0,45,5,17,0,6
+stats,com.facebook.stats.mx,JVMStatsExporter.MBeanLongAttributeFetcher,3,17,1,1,1,5,1,2,0,2
+stats,com.facebook.stats.mx,JVMStatsExporter.MBeanAttributeFetcher,0,20,0,0,0,6,0,2,0,2
+stats,com.facebook.stats.cardinality,SortedStaticModel.SymbolProbability,51,0,0,0,11,0,3,0,3,0
+stats,com.facebook.stats.cardinality,HyperLogLog,108,120,12,6,15,22,9,5,2,3
+stats,com.facebook.stats.cardinality,AdaptiveHyperLogLog,159,0,14,0,30,0,18,0,11,0
+stats,com.facebook.stats.cardinality,DenseEstimator,410,0,32,0,74,0,29,0,13,0
+stats,com.facebook.stats.cardinality,HyperLogLogCodec,323,0,18,0,69,0,25,0,16,0
+stats,com.facebook.stats.cardinality,SparseEstimator,527,0,28,0,97,0,33,0,19,0
+stats,com.facebook.stats.cardinality,ArithmeticEncoder,270,0,20,0,46,0,14,0,4,0
+stats,com.facebook.stats.cardinality,SortedStaticModel,391,0,34,0,58,0,24,0,7,0
+stats,com.facebook.stats.cardinality,HyperLogLogUtil,231,21,21,1,43,5,18,3,6,3
+stats,com.facebook.stats.cardinality,SparseEstimator.Entry,15,0,0,0,6,0,3,0,3,0
+stats,com.facebook.stats.cardinality,UnsafeUtil,123,0,24,0,37,0,15,0,3,0
+stats,com.facebook.stats.cardinality,StaticModel,312,0,32,0,46,0,22,0,6,0
+stats,com.facebook.stats.cardinality,StaticModelUtil,125,0,16,0,20,0,12,0,4,0
+stats,com.facebook.stats.cardinality,Numbers,4,11,1,1,1,1,2,1,1,1
+stats,com.facebook.stats.cardinality,BucketAndHash,0,47,0,0,0,13,0,4,0,4
+stats,com.facebook.stats.cardinality,Model.SymbolInfo,57,0,0,0,15,0,5,0,5,0
+stats,com.facebook.stats.cardinality,ArithmeticDecoder,236,0,14,0,43,0,12,0,5,0

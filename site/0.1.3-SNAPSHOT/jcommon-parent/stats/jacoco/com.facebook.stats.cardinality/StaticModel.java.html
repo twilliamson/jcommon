@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StaticModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">StaticModel.java</span></div><h1>StaticModel.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+
+import java.util.Arrays;
+
+import static com.facebook.stats.cardinality.StaticModelUtil.weightsToProbabilities;
+
+class StaticModel implements Model {
+  private final int[] counts;
+
+  private final int totalIndex;
+
+<span class="nc" id="L29">  public StaticModel(double[] weights) {</span>
+<span class="nc" id="L30">    Preconditions.checkNotNull(weights, &quot;weights is null&quot;);</span>
+
+<span class="nc bnc" id="L32" title="All 2 branches missed.">    Preconditions.checkArgument(weights.length &gt; 1, &quot;weights is empty&quot;);</span>
+<span class="nc bnc" id="L33" title="All 2 branches missed.">    Preconditions.checkArgument(</span>
+        weights.length &lt;= 512,
+        &quot;weights is can not have more than 512 entries&quot;
+    );
+
+<span class="nc" id="L38">    counts = new int[weights.length + 1];</span>
+<span class="nc" id="L39">    totalIndex = weights.length;</span>
+
+<span class="nc" id="L41">    double[] probabilities = weightsToProbabilities(weights);</span>
+
+<span class="nc bnc" id="L43" title="All 2 branches missed.">    for (int symbol = 0; symbol &lt; probabilities.length; symbol++) {</span>
+<span class="nc" id="L44">      double probability = probabilities[symbol];</span>
+
+      // value is low count + % of MAX_TOTAL
+<span class="nc" id="L47">      int value = counts[symbol] + ((int) (StaticModelUtil.MAX_COUNT * probability));</span>
+      // reserve one space for each symbol
+<span class="nc" id="L49">      value = Math.min(value, StaticModelUtil.MAX_COUNT - (probabilities.length - symbol));</span>
+      // high must be at least one bigger than the low
+<span class="nc" id="L51">      value = Math.max(value, counts[symbol] + 1);</span>
+
+<span class="nc" id="L53">      counts[symbol + 1] = value;</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">      if (counts[symbol + 1] &lt;= counts[symbol]) {</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">        Preconditions.checkState(</span>
+            counts[symbol + 1] &gt; counts[symbol],
+            &quot;Internal error: symbol %s high value %s is not greater than the low value %s&quot;,
+            symbol,
+            counts[symbol + 1],
+            counts[symbol]
+        );
+      }
+    }
+
+<span class="nc bnc" id="L65" title="All 2 branches missed.">    Preconditions.checkState(</span>
+        counts[totalIndex - 1] &lt; StaticModelUtil.MAX_COUNT,
+        &quot;Internal error: model max value %s must be less than %s&quot;
+    );
+<span class="nc" id="L69">    counts[totalIndex] = StaticModelUtil.MAX_COUNT;</span>
+
+    // verify model
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    for (int i = 1; i &lt; counts.length; i++) {</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">      Preconditions.checkState(counts[i - 1] &lt; counts[i], &quot;Internal error: model is invalid&quot;);</span>
+    }
+<span class="nc" id="L75">  }</span>
+
+  @Override
+  public SymbolInfo getSymbolInfo(int symbol) {
+<span class="nc" id="L79">    Preconditions.checkPositionIndex(symbol, counts.length, &quot;symbol&quot;);</span>
+<span class="nc" id="L80">    return new SymbolInfo(symbol, counts[symbol], counts[symbol + 1]);</span>
+  }
+
+  @Override
+  public int log2MaxCount() {
+<span class="nc" id="L85">    return StaticModelUtil.COUNT_BITS;</span>
+  }
+
+  @Override
+  public SymbolInfo countToSymbol(int targetCount) {
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    Preconditions.checkArgument(targetCount &gt;= 0, &quot;targetCount is negative %s&quot;, targetCount);</span>
+
+    // binary search for value
+<span class="nc" id="L93">    int lowSymbol = 0;</span>
+<span class="nc" id="L94">    int highSymbol = counts.length;</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    while (highSymbol &gt; lowSymbol + 1) {</span>
+<span class="nc" id="L96">      int midSymbol = (lowSymbol + highSymbol) &gt;&gt;&gt; 1;</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">      if (counts[midSymbol] &gt; targetCount) {</span>
+        // value is smaller
+<span class="nc" id="L99">        highSymbol = midSymbol;</span>
+      } else {
+        // value is larger or equal
+<span class="nc" id="L102">        lowSymbol = midSymbol;</span>
+      }
+<span class="nc" id="L104">    }</span>
+<span class="nc" id="L105">    return new SymbolInfo(lowSymbol, counts[lowSymbol], counts[lowSymbol + 1]);</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L111">      return true;</span>
+    }
+<span class="nc bnc" id="L113" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L114">      return false;</span>
+    }
+
+<span class="nc" id="L117">    StaticModel staticModel = (StaticModel) o;</span>
+
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    if (totalIndex != staticModel.totalIndex) {</span>
+<span class="nc" id="L120">      return false;</span>
+    }
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    if (!Arrays.equals(counts, staticModel.counts)) {</span>
+<span class="nc" id="L123">      return false;</span>
+    }
+
+<span class="nc" id="L126">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L131">    int result = Arrays.hashCode(counts);</span>
+<span class="nc" id="L132">    result = 31 * result + totalIndex;</span>
+<span class="nc" id="L133">    return result;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
