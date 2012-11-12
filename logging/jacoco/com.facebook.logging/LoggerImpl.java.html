@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>LoggerImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon logging</a> &gt; <a href="index.html" class="el_package">com.facebook.logging</a> &gt; <span class="el_source">LoggerImpl.java</span></div><h1>LoggerImpl.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.logging;
+
+import org.slf4j.LoggerFactory;
+
+/**
+ * Logger with efficient var-args support.  Underlying logger is Log4j, but may be swapped to
+ * any logger.
+ */
+public class LoggerImpl implements Logger {
+  private final org.slf4j.Logger logger;
+
+<span class="fc" id="L27">  public LoggerImpl(org.slf4j.Logger logger) {</span>
+<span class="fc" id="L28">    this.logger = logger;</span>
+<span class="fc" id="L29">  }</span>
+
+  public static Logger getLogger(Class&lt;?&gt; clazz) {
+<span class="nc" id="L32">    org.slf4j.Logger logger = LoggerFactory.getLogger(clazz);</span>
+
+<span class="nc" id="L34">    return new LoggerImpl(logger);</span>
+  }
+
+  public static Logger getLogger(String name) {
+<span class="nc" id="L38">    org.slf4j.Logger logger = LoggerFactory.getLogger(name);</span>
+
+<span class="nc" id="L40">    return new LoggerImpl(logger);</span>
+  }
+
+  /**
+   * Returns a logger for the calling class or context.
+   * &lt;p/&gt;
+   * The fully-qualified name of that class is used to get an slf4j logger, which is then wrapped.
+   * Typical usage is to use this method to initialize a static member variable, e.g.,
+   * {@code private static final Logger LOG = Logger.getLogger();}
+   * &lt;p/&gt;
+   * As getStackTrace() isn't super cheap, this is not the sort of thing you want (or need)
+   * to be doing hundreds of times a second;
+   *
+   * @return a logger for the current scope
+   */
+  public static Logger getClassLogger() {
+<span class="fc" id="L56">    StackTraceElement[] stacktrace = Thread.currentThread().getStackTrace();</span>
+<span class="fc" id="L57">    StackTraceElement element = stacktrace[2];</span>
+<span class="fc" id="L58">    String name = element.getClassName();</span>
+
+<span class="fc" id="L60">    return new LoggerImpl(LoggerFactory.getLogger(name));</span>
+  }
+
+  @Override
+  public boolean isDebugEnabled() {
+<span class="nc" id="L65">    return logger.isDebugEnabled();</span>
+  }
+
+  @Override
+  public boolean isInfoEnabled() {
+<span class="nc" id="L70">    return logger.isInfoEnabled();</span>
+  }
+
+  @Override
+  public boolean isWarnEnabled() {
+<span class="nc" id="L75">    return logger.isWarnEnabled();</span>
+  }
+
+  @Override
+  public boolean isErrorEnabled() {
+<span class="nc" id="L80">    return logger.isErrorEnabled();</span>
+  }
+
+  @Override
+  public void debug(String format, Object... args) {
+<span class="nc bnc" id="L85" title="All 2 branches missed.">    if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L86">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L88">      logger.debug(message);</span>
+    }
+<span class="nc" id="L90">  }</span>
+
+  @Override
+  public void debug(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L95">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L97">      logger.debug(message, t);</span>
+    }
+<span class="nc" id="L99">  }</span>
+
+  @Override
+  @Deprecated
+  public void debug(String message, Throwable throwable) {
+<span class="nc bnc" id="L104" title="All 2 branches missed.">    if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L105">      logger.debug(message, throwable);</span>
+    }
+
+<span class="nc" id="L108">  }</span>
+
+  @Override
+  public void info(String format, Object... args) {
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">    if (logger.isInfoEnabled()) {</span>
+<span class="fc" id="L113">      String message = String.format(format, args);</span>
+
+<span class="fc" id="L115">      logger.info(message);</span>
+    }
+<span class="fc" id="L117">  }</span>
+
+  @Override
+  public void info(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (logger.isInfoEnabled()) {</span>
+<span class="nc" id="L122">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L124">      logger.info(message, t);</span>
+    }
+<span class="nc" id="L126">  }</span>
+
+  @Override
+  @Deprecated
+  public void info(String message, Throwable throwable) {
+<span class="nc bnc" id="L131" title="All 2 branches missed.">    if (logger.isInfoEnabled()) {</span>
+<span class="nc" id="L132">      logger.warn(message, throwable);</span>
+    }
+<span class="nc" id="L134">  }</span>
+
+  @Override
+  public void warn(String format, Object... args) {
+<span class="nc bnc" id="L138" title="All 2 branches missed.">    if (logger.isWarnEnabled()) {</span>
+<span class="nc" id="L139">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L141">      logger.warn(message);</span>
+    }
+<span class="nc" id="L143">  }</span>
+
+  @Override
+  public void warn(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L147" title="All 2 branches missed.">    if (logger.isWarnEnabled()) {</span>
+<span class="nc" id="L148">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L150">      logger.warn(message, t);</span>
+    }
+<span class="nc" id="L152">  }</span>
+
+  @Override
+  @Deprecated
+  public void warn(String message, Throwable throwable) {
+<span class="nc bnc" id="L157" title="All 2 branches missed.">    if (logger.isWarnEnabled()) {</span>
+<span class="nc" id="L158">      logger.warn(message, throwable);</span>
+    }
+<span class="nc" id="L160">  }</span>
+
+  @Override
+  public void error(String format, Object... args) {
+<span class="nc bnc" id="L164" title="All 2 branches missed.">    if (logger.isErrorEnabled()) {</span>
+<span class="nc" id="L165">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L167">      logger.error(message);</span>
+    }
+<span class="nc" id="L169">  }</span>
+
+  @Override
+  public void error(Throwable t, String format, Object... args) {
+<span class="nc bnc" id="L173" title="All 2 branches missed.">    if (logger.isErrorEnabled()) {</span>
+<span class="nc" id="L174">      String message = String.format(format, args);</span>
+
+<span class="nc" id="L176">      logger.error(message, t);</span>
+    }
+<span class="nc" id="L178">  }</span>
+
+  @Override
+  @Deprecated
+  public void error(String message, Throwable throwable) {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (logger.isErrorEnabled()) {</span>
+<span class="nc" id="L184">      logger.error(message, throwable);</span>
+    }
+<span class="nc" id="L186">  }</span>
+
+  @Override
+  public String getName() {
+<span class="fc" id="L190">    return logger.getName();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
