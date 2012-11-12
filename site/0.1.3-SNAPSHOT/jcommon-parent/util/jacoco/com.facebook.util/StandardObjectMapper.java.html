@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StandardObjectMapper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon util</a> &gt; <a href="index.html" class="el_package">com.facebook.util</a> &gt; <span class="el_source">StandardObjectMapper.java</span></div><h1>StandardObjectMapper.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.util;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.guava.GuavaModule;
+
+public class StandardObjectMapper {
+<span class="nc" id="L27">  public static final ObjectMapper MAPPER = new ObjectMapper();</span>
+
+  static {
+<span class="nc" id="L30">    MAPPER.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);</span>
+<span class="nc" id="L31">    MAPPER.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);</span>
+<span class="nc" id="L32">    MAPPER.disable(MapperFeature.USE_GETTERS_AS_SETTERS);</span>
+<span class="nc" id="L33">    MAPPER.disable(MapperFeature.AUTO_DETECT_GETTERS);</span>
+<span class="nc" id="L34">    MAPPER.disable(MapperFeature.AUTO_DETECT_IS_GETTERS);</span>
+    // to allow C/C++ style comments in JSON (non-standard, disabled by default)
+<span class="nc" id="L36">    JsonFactory jsonFactory = MAPPER.getJsonFactory();</span>
+<span class="nc" id="L37">    jsonFactory.enable(JsonParser.Feature.ALLOW_COMMENTS);</span>
+    // to allow (non-standard) unquoted field names in JSON:
+<span class="nc" id="L39">    jsonFactory.enable(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES);</span>
+    // to allow use of apostrophes (single quotes), non standard
+<span class="nc" id="L41">    jsonFactory.enable(JsonParser.Feature.ALLOW_SINGLE_QUOTES);</span>
+<span class="nc" id="L42">    jsonFactory.enable(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS);</span>
+<span class="nc" id="L43">    jsonFactory.enable(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER);</span>
+<span class="nc" id="L44">    MAPPER.registerModule(new GuavaModule());</span>
+<span class="nc" id="L45">  }</span>
+
+<span class="nc" id="L47">  private StandardObjectMapper() {</span>
+<span class="nc" id="L48">    throw new AssertionError();</span>
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

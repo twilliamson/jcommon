@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>QuickLz.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon util</a> &gt; <a href="index.html" class="el_package">com.facebook.util.compress</a> &gt; <span class="el_source">QuickLz.java</span></div><h1>QuickLz.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// QuickLZ data compression library
+// Copyright (C) 2006-2008 Lasse Mikkel Reinhold
+// lar@quicklz.com
+//
+// QuickLZ can be used for free under the GPL-1 or GPL-2 license
+// (where anything released into public must be open source) or under
+// a commercial license if such has been acquired (see
+// http://www.quicklz.com/order.html). The commercial license does not
+// cover derived or ported versions created by third parties under
+// GPL.
+//
+// Java port of version 1.4.0. Only a subset of the C library has been
+// ported, namely level 1 not in streaming mode.
+
+package com.facebook.util.compress;
+
+<span class="nc" id="L32">public class QuickLz {</span>
+
+  // The port is compatible with the C version with following settings:
+<span class="nc" id="L35">  public final int QLZ_COMPRESSION_LEVEL = 1;</span>
+<span class="nc" id="L36">  public final int QLZ_STREAMING_BUFFER = 0;</span>
+
+  // No bounds checking code required because this is managed Java
+<span class="nc" id="L39">  public final int QLZ_MEMORY_SAFE = 0;</span>
+
+  // QuickLZ Java version 1.4.0 final (negative revision means beta)
+<span class="nc" id="L42">  public final int QLZ_VERSION_MAJOR = 1;</span>
+<span class="nc" id="L43">  public final int QLZ_VERSION_MINOR = 4;</span>
+<span class="nc" id="L44">  public final int QLZ_VERSION_REVISION = 0;</span>
+
+  final private static int HASH_VALUES = 4096;
+  final private static int MINOFFSET = 2;
+  final private static int UNCONDITIONAL_MATCHLEN = 6;
+  final private static int UNCOMPRESSED_END = 4;
+  final private static int CWORD_LEN = 4;
+  final private static int DEFAULT_HEADERLEN = 9;
+
+  static int headerLen(byte[] source)
+  {
+<span class="nc bnc" id="L55" title="All 2 branches missed.">    return ((source[0] &amp; 2) == 2) ? 9 : 3;</span>
+  }
+
+  static public long sizeDecompressed(byte[] source)
+  {
+<span class="nc bnc" id="L60" title="All 2 branches missed.">    if (headerLen(source) == 9)</span>
+<span class="nc" id="L61">      return fastread(source, 5, 4);</span>
+    else
+<span class="nc" id="L63">      return fastread(source, 2, 1);</span>
+  }
+
+  static public long sizeCompressed(byte[] source)
+  {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">    if (headerLen(source) == 9)</span>
+<span class="nc" id="L69">      return fastread(source, 1, 4);</span>
+    else
+<span class="nc" id="L71">      return fastread(source, 1, 1);</span>
+  }
+
+  public static byte[] compress(byte[] source)
+  {
+<span class="nc" id="L76">    int src = 0;</span>
+<span class="nc" id="L77">    int headerlen = DEFAULT_HEADERLEN;</span>
+<span class="nc" id="L78">    int dst = headerlen + CWORD_LEN;</span>
+<span class="nc" id="L79">    long cword_val = 0x80000000L;</span>
+<span class="nc" id="L80">    int cword_ptr = headerlen;</span>
+<span class="nc" id="L81">    byte[] destination = new byte[source.length + 400];</span>
+<span class="nc" id="L82">    int[] hashtable = new int[HASH_VALUES];</span>
+<span class="nc" id="L83">    int[] cachetable = new int[HASH_VALUES];</span>
+<span class="nc" id="L84">    byte[] hash_counter = new byte[HASH_VALUES];</span>
+    byte[] d2;
+<span class="nc" id="L86">    int fetch = 0;</span>
+<span class="nc" id="L87">    int last_matchstart = (source.length - UNCONDITIONAL_MATCHLEN - </span>
+        UNCOMPRESSED_END - 1);
+
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    if(source.length == 0)</span>
+<span class="nc" id="L91">      return new byte[0];</span>
+
+<span class="nc bnc" id="L93" title="All 2 branches missed.">    if(src &lt;= last_matchstart)</span>
+<span class="nc" id="L94">      fetch = (int)fastread(source, src, 3);</span>
+
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    while (src &lt;= last_matchstart)</span>
+    {
+<span class="nc bnc" id="L98" title="All 2 branches missed.">      if ((cword_val &amp; 1) == 1)</span>
+      {
+<span class="nc bnc" id="L100" title="All 4 branches missed.">        if (src &gt; 3 * (source.length &gt;&gt; 2) &amp;&amp; dst &gt; src - (src &gt;&gt; 5))</span>
+        {
+<span class="nc" id="L102">          d2 = new byte[source.length + DEFAULT_HEADERLEN];</span>
+<span class="nc" id="L103">          d2[0] = 2 | 0;</span>
+<span class="nc" id="L104">          fastwrite(d2, 1, source.length + headerlen, 4);</span>
+<span class="nc" id="L105">          fastwrite(d2, 5, source.length, 4);</span>
+<span class="nc" id="L106">          System.arraycopy(source, 0, d2, headerlen, source.length);</span>
+<span class="nc" id="L107">          return d2;</span>
+        }
+
+<span class="nc" id="L110">        fastwrite(destination, cword_ptr, (cword_val &gt;&gt;&gt; 1) | 0x80000000L, 4);</span>
+<span class="nc" id="L111">        cword_ptr = dst;</span>
+<span class="nc" id="L112">        dst += CWORD_LEN;</span>
+<span class="nc" id="L113">        cword_val = 0x80000000L;</span>
+      }            
+
+<span class="nc" id="L116">      int hash = ((fetch &gt;&gt;&gt; 12) ^ fetch) &amp; (HASH_VALUES - 1);</span>
+<span class="nc" id="L117">      int o = hashtable[hash];</span>
+<span class="nc" id="L118">      int cache = cachetable[hash] ^ fetch;</span>
+
+<span class="nc" id="L120">      cachetable[hash] = fetch;</span>
+<span class="nc" id="L121">      hashtable[hash] = src;</span>
+
+<span class="nc bnc" id="L123" title="All 6 branches missed.">      if (cache == 0 &amp;&amp; src - o &gt; MINOFFSET &amp;&amp; hash_counter[hash] != 0)</span>
+      {
+<span class="nc" id="L125">        cword_val = ((cword_val &gt;&gt;&gt; 1) | 0x80000000L);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">        if (source[o + 3] != source[src + 3])</span>
+        {
+<span class="nc" id="L128">          int f = 3 - 2 | (hash &lt;&lt; 4);</span>
+<span class="nc" id="L129">          destination[dst + 0] = (byte)(f &gt;&gt;&gt; 0 * 8);</span>
+<span class="nc" id="L130">          destination[dst + 1] = (byte)(f &gt;&gt;&gt; 1 * 8);</span>
+<span class="nc" id="L131">          src += 3;</span>
+<span class="nc" id="L132">          dst += 2;</span>
+<span class="nc" id="L133">        }</span>
+        else
+        {
+<span class="nc" id="L136">          int old_src = src;</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">          int remaining = ((source.length - UNCOMPRESSED_END - src + 1 - 1)&gt;255 </span>
+              ? 255 
+                  : (source.length - UNCOMPRESSED_END - src + 1 - 1));
+
+<span class="nc" id="L141">          src += 4;</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">          if (source[o + src - old_src] == source[src])</span>
+          {
+<span class="nc" id="L144">            src++;</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">            if (source[o + src - old_src] == source[src])</span>
+            {
+<span class="nc" id="L147">              src++;</span>
+<span class="nc bnc" id="L148" title="All 4 branches missed.">              while (source[o + (src - old_src)] == source[src] &amp;&amp; </span>
+                  (src - old_src) &lt; remaining)
+<span class="nc" id="L150">                src++;</span>
+            }
+          }
+
+<span class="nc" id="L154">          int matchlen = src - old_src;</span>
+
+<span class="nc" id="L156">          hash &lt;&lt;= 4;</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">          if (matchlen &lt; 18)</span>
+          {
+<span class="nc" id="L159">            int f = hash | (matchlen - 2);</span>
+            // Neither Java nor C# wants to inline fastwriteN
+<span class="nc" id="L161">            destination[dst + 0] = (byte)(f &gt;&gt;&gt; 0 * 8);</span>
+<span class="nc" id="L162">            destination[dst + 1] = (byte)(f &gt;&gt;&gt; 1 * 8);</span>
+<span class="nc" id="L163">            dst += 2;</span>
+<span class="nc" id="L164">          }</span>
+          else
+          {
+<span class="nc" id="L167">            int f = hash | (matchlen &lt;&lt; 16);</span>
+<span class="nc" id="L168">            fastwrite(destination, dst, f, 3);</span>
+<span class="nc" id="L169">            dst += 3;</span>
+          }
+        }
+<span class="nc" id="L172">        fetch = (int)fastread(source, src, 3);</span>
+      }
+      else
+      {
+<span class="nc" id="L176">        hash_counter[hash] = 1;</span>
+<span class="nc" id="L177">        destination[dst] = source[src];</span>
+<span class="nc" id="L178">        cword_val = (cword_val &gt;&gt;&gt; 1);</span>
+<span class="nc" id="L179">        src++;</span>
+<span class="nc" id="L180">        dst++;</span>
+<span class="nc" id="L181">        fetch = ((fetch &gt;&gt;&gt; 8) &amp; 0xffff) | </span>
+        ((((int)source[src + 2]) &amp; 0xff) &lt;&lt; 16);
+      }
+<span class="nc" id="L184">    }</span>
+
+<span class="nc bnc" id="L186" title="All 2 branches missed.">    while (src &lt;= source.length - 1)</span>
+    {
+<span class="nc bnc" id="L188" title="All 2 branches missed.">      if ((cword_val &amp; 1) == 1)</span>
+      {
+<span class="nc" id="L190">        fastwrite(destination, cword_ptr, </span>
+            (long)((cword_val &gt;&gt;&gt; 1) | 0x80000000L), 4);
+<span class="nc" id="L192">        cword_ptr = dst;</span>
+<span class="nc" id="L193">        dst += CWORD_LEN;</span>
+<span class="nc" id="L194">        cword_val = 0x80000000L;</span>
+      }
+
+<span class="nc" id="L197">      destination[dst] = source[src];</span>
+<span class="nc" id="L198">      src++;</span>
+<span class="nc" id="L199">      dst++;</span>
+<span class="nc" id="L200">      cword_val = (cword_val &gt;&gt;&gt; 1);</span>
+    }
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    while ((cword_val &amp; 1) != 1)</span>
+    {
+<span class="nc" id="L204">      cword_val = (cword_val &gt;&gt;&gt; 1);</span>
+    }
+<span class="nc" id="L206">    fastwrite(destination, cword_ptr, (long)((cword_val &gt;&gt;&gt; 1) | 0x80000000L), </span>
+        CWORD_LEN);
+<span class="nc" id="L208">    destination[0] = 2 | 1;</span>
+<span class="nc" id="L209">    fastwrite(destination, 1, (long)dst, 4);</span>
+<span class="nc" id="L210">    fastwrite(destination, 5, (long)source.length, 4);</span>
+<span class="nc" id="L211">    d2 = new byte[dst];</span>
+<span class="nc" id="L212">    System.arraycopy(destination, 0, d2, 0, dst);      </span>
+<span class="nc" id="L213">    return d2;</span>
+  }
+
+  static long fastread(byte[] a, int i, int numbytes)
+  {
+<span class="nc" id="L218">    long l = 0;</span>
+<span class="nc bnc" id="L219" title="All 5 branches missed.">    switch (numbytes)</span>
+    {
+    case 3:
+<span class="nc" id="L222">      l |= ((((int)a[i + 0]) &amp; 0xffL) &lt;&lt; 0*8);</span>
+<span class="nc" id="L223">      l |= ((((int)a[i + 1]) &amp; 0xffL) &lt;&lt; 1*8);</span>
+<span class="nc" id="L224">      l |= ((((int)a[i + 2]) &amp; 0xffL) &lt;&lt; 2*8);</span>
+<span class="nc" id="L225">      break;</span>
+
+    case 2:
+<span class="nc" id="L228">      l |= ((((int)a[i + 0]) &amp; 0xffL) &lt;&lt; 0*8);</span>
+<span class="nc" id="L229">      l |= ((((int)a[i + 1]) &amp; 0xffL) &lt;&lt; 1*8);</span>
+<span class="nc" id="L230">      break;</span>
+    case 1:
+<span class="nc" id="L232">      l |= ((((int)a[i + 0]) &amp; 0xffL) &lt;&lt; 0*8);</span>
+<span class="nc" id="L233">      break;</span>
+    case 4:
+<span class="nc" id="L235">      l |= ((((int)a[i + 0]) &amp; 0xffL) &lt;&lt; 0*8);</span>
+<span class="nc" id="L236">      l |= ((((int)a[i + 1]) &amp; 0xffL) &lt;&lt; 1*8);</span>
+<span class="nc" id="L237">      l |= ((((int)a[i + 2]) &amp; 0xffL) &lt;&lt; 2*8);</span>
+<span class="nc" id="L238">      l |= ((((int)a[i + 3]) &amp; 0xffL) &lt;&lt; 3*8);</span>
+      break;
+    }
+<span class="nc" id="L241">    return l;</span>
+  }
+
+  static void fastwrite(byte[] a, int i, long value, int numbytes)
+  {
+<span class="nc bnc" id="L246" title="All 4 branches missed.">    switch (numbytes)</span>
+    {
+    case 3:
+<span class="nc" id="L249">      a[i] = (byte)value;</span>
+<span class="nc" id="L250">      a[i + 1] = (byte)(value &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L251">      a[i + 2] = (byte)(value &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L252">      break;</span>
+    case 2:
+<span class="nc" id="L254">      a[i] = (byte)value;</span>
+<span class="nc" id="L255">      a[i + 1] = (byte)(value &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L256">      break;</span>
+    case 4:
+<span class="nc" id="L258">      a[i] = (byte)value;</span>
+<span class="nc" id="L259">      a[i + 1] = (byte)(value &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L260">      a[i + 2] = (byte)(value &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L261">      a[i + 3] = (byte)(value &gt;&gt;&gt; 24);</span>
+      break;
+    }
+<span class="nc" id="L264">  }</span>
+
+  static public byte[] decompress(byte[] source)
+  {
+<span class="nc" id="L268">    int size = (int)sizeDecompressed(source);</span>
+
+<span class="nc" id="L270">    int src = headerLen(source);</span>
+<span class="nc" id="L271">    int dst = 0;</span>
+<span class="nc" id="L272">    long cword_val = 1;</span>
+<span class="nc" id="L273">    byte[] destination = new byte[size];</span>
+<span class="nc" id="L274">    int[] hashtable = new int[4096];</span>
+<span class="nc" id="L275">    byte[] hash_counter = new byte[4096];</span>
+<span class="nc" id="L276">    int last_matchstart = size - UNCONDITIONAL_MATCHLEN - UNCOMPRESSED_END - 1;</span>
+<span class="nc" id="L277">    int last_hashed = -1;</span>
+    int hash;
+<span class="nc" id="L279">    int fetch = 0;</span>
+
+<span class="nc bnc" id="L281" title="All 2 branches missed.">    if ((source[0] &amp; 1) != 1)</span>
+    {
+<span class="nc" id="L283">      byte[] d2 = new byte[size];</span>
+<span class="nc" id="L284">      System.arraycopy(source, headerLen(source), d2, 0, size);</span>
+<span class="nc" id="L285">      return d2;</span>
+    }
+
+    for (; ; )
+    {
+<span class="nc bnc" id="L290" title="All 2 branches missed.">      if (cword_val == 1)</span>
+      {
+<span class="nc" id="L292">        cword_val = fastread(source, src, 4);</span>
+<span class="nc" id="L293">        src += 4;</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">        if (dst &lt;= last_matchstart)</span>
+<span class="nc" id="L295">          fetch = (int)fastread(source, src, 3);</span>
+      }
+
+<span class="nc bnc" id="L298" title="All 2 branches missed.">      if ((cword_val &amp; 1) == 1)</span>
+      {
+        int matchlen;
+        int offset2;
+
+<span class="nc" id="L303">        cword_val = cword_val &gt;&gt;&gt; 1;</span>
+<span class="nc" id="L304">      hash = (fetch &gt;&gt;&gt; 4) &amp; 0xfff;</span>
+<span class="nc" id="L305">      offset2 = hashtable[hash];</span>
+
+<span class="nc bnc" id="L307" title="All 2 branches missed.">      if ((fetch &amp; 0xf) != 0)</span>
+      {
+<span class="nc" id="L309">        matchlen = (fetch &amp; 0xf) + 2;</span>
+<span class="nc" id="L310">        src += 2;</span>
+      }
+      else
+      {
+<span class="nc" id="L314">        matchlen = ((int)source[src + 2]) &amp; 0xff;</span>
+<span class="nc" id="L315">        src += 3;</span>
+      }
+
+<span class="nc" id="L318">      destination[dst + 0] = destination[offset2 + 0];</span>
+<span class="nc" id="L319">      destination[dst + 1] = destination[offset2 + 1];</span>
+<span class="nc" id="L320">      destination[dst + 2] = destination[offset2 + 2];</span>
+
+<span class="nc bnc" id="L322" title="All 2 branches missed.">      for (int i = 3; i &lt; matchlen; i += 1)</span>
+      {
+<span class="nc" id="L324">        destination[dst + i] = destination[offset2 + i];</span>
+      }
+<span class="nc" id="L326">      dst += matchlen;</span>
+
+<span class="nc" id="L328">      fetch = (int)fastread(destination, last_hashed + 1, 3); </span>
+      // destination[last_hashed + 1] | (destination[last_hashed + 2] &lt;&lt; 8) | 
+      // (destination[last_hashed + 3] &lt;&lt; 16);
+<span class="nc bnc" id="L331" title="All 2 branches missed.">      while (last_hashed &lt; dst - matchlen)</span>
+      {
+<span class="nc" id="L333">        last_hashed++;</span>
+<span class="nc" id="L334">        hash = ((fetch &gt;&gt;&gt; 12) ^ fetch) &amp; (HASH_VALUES - 1);</span>
+<span class="nc" id="L335">        hashtable[hash] = last_hashed;</span>
+<span class="nc" id="L336">        hash_counter[hash] = 1;</span>
+<span class="nc" id="L337">        fetch = fetch &gt;&gt;&gt; 8 &amp; 0xffff | </span>
+        (((int)destination[last_hashed + 3]) &amp; 0xff) &lt;&lt; 16;
+      }
+<span class="nc" id="L340">      last_hashed = dst - 1;</span>
+<span class="nc" id="L341">      fetch = (int)fastread(source, src, 3);</span>
+<span class="nc" id="L342">      }</span>
+      else
+      {
+<span class="nc bnc" id="L345" title="All 2 branches missed.">        if (dst &lt;= last_matchstart)</span>
+        {
+<span class="nc" id="L347">          destination[dst] = source[src];</span>
+<span class="nc" id="L348">          dst += 1;</span>
+<span class="nc" id="L349">          src += 1;</span>
+<span class="nc" id="L350">          cword_val = cword_val &gt;&gt;&gt; 1;</span>
+
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        while (last_hashed &lt; dst - 3)</span>
+        {
+<span class="nc" id="L354">          last_hashed++;</span>
+<span class="nc" id="L355">          int fetch2 = (int)fastread(destination, last_hashed, 3);</span>
+<span class="nc" id="L356">          hash = ((fetch2 &gt;&gt;&gt; 12) ^ fetch2) &amp; (HASH_VALUES - 1);</span>
+<span class="nc" id="L357">          hashtable[hash] = last_hashed;</span>
+<span class="nc" id="L358">          hash_counter[hash] = 1;</span>
+<span class="nc" id="L359">        }</span>
+<span class="nc" id="L360">        fetch = fetch &gt;&gt; 8 &amp; 0xffff | (((int)source[src + 2]) &amp; 0xff) &lt;&lt; 16;  </span>
+        }
+        else
+        {
+<span class="nc bnc" id="L364" title="All 2 branches missed.">          while (dst &lt;= size - 1)</span>
+          {
+<span class="nc bnc" id="L366" title="All 2 branches missed.">            if (cword_val == 1)</span>
+            {
+<span class="nc" id="L368">              src += CWORD_LEN;</span>
+<span class="nc" id="L369">              cword_val = 0x80000000L;</span>
+            }
+
+<span class="nc" id="L372">            destination[dst] = source[src];</span>
+<span class="nc" id="L373">            dst++;</span>
+<span class="nc" id="L374">            src++;</span>
+<span class="nc" id="L375">            cword_val = cword_val &gt;&gt;&gt; 1;</span>
+          }
+
+<span class="nc" id="L378">          byte[] d2 = new byte[size];</span>
+<span class="nc" id="L379">          System.arraycopy(destination, 0, d2, 0, size);</span>
+<span class="nc" id="L380">          return d2;</span>
+        }
+      }
+    }
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
