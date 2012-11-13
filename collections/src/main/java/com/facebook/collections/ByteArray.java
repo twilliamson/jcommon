@@ -42,25 +42,24 @@ public abstract class ByteArray implements Comparable<ByteArray> {
     if (array2 == null) {
       return false;
     }
-
-    int array1Length = array2.getLength();
-    int array2Length = array2.getLength();
-
-    if (array1Length != array2Length) {
-      return false;
-    }
-
-    int length = array1Length;
-
-    for (int i = 0; i < length; i++) {
-      if (array1.getAdjusted(0) > array2.getAdjusted(0)) {
-        return false;
-      } else if (array1.getAdjusted(0) < array2.getAdjusted(0)) {
+    if (array1.getArray() == null) {
+      if (array2.getArray() == null) {
+        return true;
+      } else {
         return false;
       }
     }
 
-    return true;
+    if (array2.getArray() == null) {
+      return false;
+    }
+
+
+    int array1Length = array1.getLength();
+    int array2Length = array2.getLength();
+
+    return array1Length == array2Length && Arrays.equals(array1.getArray(), array2.getArray());
+
   }
 
   public boolean equals(Object o) {
@@ -208,9 +207,9 @@ public abstract class ByteArray implements Comparable<ByteArray> {
       int length = Math.min(array1Length, array2Length);
 
       for (int i = 0; i < length; i++) {
-        if (o1.getAdjusted(0) < o2.getAdjusted(0)) {
+        if (o1.getAdjusted(i) < o2.getAdjusted(i)) {
           return -1;
-        } else if (o1.getAdjusted(0) > o2.getAdjusted(0)) {
+        } else if (o1.getAdjusted(i) > o2.getAdjusted(i)) {
           return 1;
         }
       }
