@@ -24,7 +24,7 @@
         overridden by the disuse of this property.  This helps for the common case that the
         sub-modules are really evolving at the same rate and we consider this "one library"
      -->
-    <project.default.version>0.1.2-SNAPSHOT</project.default.version>
+    <project.default.version>0.1.3-SNAPSHOT</project.default.version>
     <project.java.version>1.7</project.java.version>
 
   </properties>
@@ -35,7 +35,7 @@
       scm:git:ssh://projects.git.vip.facebook.com/data/gitrepos/jcommon.git
     </developerConnection>
     <url>https://phabricator.fb.com/diffusion/</url>
-    <tag>jcommon-root-0.1.0</tag>
+    <tag>HEAD</tag>
   </scm>
 
   <dependencyManagement>
