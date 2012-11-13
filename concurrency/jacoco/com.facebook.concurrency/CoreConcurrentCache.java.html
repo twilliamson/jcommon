@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CoreConcurrentCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">CoreConcurrentCache.java</span></div><h1>CoreConcurrentCache.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.collectionsbase.Mapper;
+import com.facebook.collections.TranslatingIterator;
+import com.facebook.util.exceptions.ExceptionHandler;
+
+import java.util.AbstractMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
+
+@SuppressWarnings({&quot;unchecked&quot;})
+public class CoreConcurrentCache&lt;K, V, E extends Exception&gt;
+  implements ConcurrentCache&lt;K, V, E&gt; {
+  private final ConcurrentMap&lt;K, Object&gt; cache;
+  private final ValueFactory&lt;K, V, E&gt; valueFactory;
+  private final ExceptionHandler&lt;E&gt; exceptionHandler;
+
+  /**
+   * allows subclasses to provide an alternative cache implementation
+   * 
+   * @param valueFactory
+   * @param exceptionHandler
+   * @param cache - any ConcurrentMap impl will suffice
+   */
+  protected CoreConcurrentCache(
+    ValueFactory&lt;K, V, E&gt; valueFactory,
+    ExceptionHandler&lt;E&gt; exceptionHandler,
+    ConcurrentMap&lt;K, Object&gt; cache
+<span class="fc" id="L48">  ) {</span>
+<span class="fc" id="L49">    this.valueFactory = valueFactory;</span>
+<span class="fc" id="L50">    this.exceptionHandler = exceptionHandler;</span>
+<span class="fc" id="L51">    this.cache = cache;</span>
+<span class="fc" id="L52">  }</span>
+
+  public CoreConcurrentCache(
+    ValueFactory&lt;K, V, E&gt; valueFactory, ExceptionHandler&lt;E&gt; exceptionHandler
+  ) {
+<span class="fc" id="L57">    this(valueFactory, exceptionHandler, new ConcurrentHashMap&lt;K, Object&gt;());</span>
+<span class="fc" id="L58">  }</span>
+
+  @Override
+  public V get(final K key) throws E {
+<span class="fc" id="L62">    Object value = cache.get(key);</span>
+
+    // if there isn't entry, do a thread-safe insert into the cache, 
+    // and create if necessary 
+<span class="fc bfc" id="L66" title="All 2 branches covered.">    if (value == null) {</span>
+<span class="fc" id="L67">      final AtomicReference&lt;Object&gt; valueRef = new AtomicReference&lt;Object&gt;();</span>
+<span class="fc" id="L68">      value = new PrivateFutureHelper&lt;V, E&gt;(</span>
+<span class="fc" id="L69">        new Callable&lt;V&gt;() {</span>
+          @Override
+          public V call() throws E {
+<span class="fc" id="L72">            V producedValue = valueFactory.create(key);</span>
+            
+            // we place our value into the map in place of the factory if and
+            // only if it is still mapped to the same private future helper
+<span class="fc" id="L76">            CoreConcurrentCache.this.cache.replace(</span>
+              key, valueRef.get(), producedValue
+            );
+            
+<span class="fc" id="L80">            return producedValue;</span>
+          }
+        },
+        exceptionHandler
+      );
+<span class="fc" id="L85">      valueRef.set(value);</span>
+
+<span class="fc" id="L87">      Object existingValue = cache.putIfAbsent(key, value);</span>
+
+      // did another thread insert a value into the cache before us?  If so,
+      // use it
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">      if (existingValue != null) {</span>
+<span class="nc" id="L92">        value = existingValue;</span>
+      }
+    }
+
+<span class="fc" id="L96">    return decodeValue(value);</span>
+  }
+
+  @Override
+  public V put(K key, V value) throws E {
+<span class="nc" id="L101">    Object existingValue = cache.put(key, value);</span>
+    
+<span class="nc" id="L103">    return decodeValue(existingValue);</span>
+  }
+
+  @Override
+  public V remove(K key) throws E {
+<span class="fc" id="L108">    Object value = cache.remove(key);</span>
+
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L111">      return null;</span>
+    } else {
+<span class="fc" id="L113">      return decodeValue(value);</span>
+    }
+  }
+
+  @Override
+  public boolean removeIfError(K key) {
+<span class="fc" id="L119">    Object value = cache.get(key);</span>
+
+<span class="pc bpc" id="L121" title="2 of 6 branches missed.">    if (value != null &amp;&amp; </span>
+      value instanceof PrivateFutureHelper &amp;&amp;
+      ((FutureHelper&lt;V, E&gt;)value).isError()
+      ) {
+<span class="fc" id="L125">      cache.remove(key, value);</span>
+      
+<span class="fc" id="L127">      return true;</span>
+    }
+
+<span class="fc" id="L130">    return false;</span>
+  }
+
+  @Override
+  public void clear() {
+<span class="fc" id="L135">    cache.clear();</span>
+<span class="fc" id="L136">  }</span>
+
+  @Override
+  public void prune() {
+    // no-op 
+<span class="nc" id="L141">  }</span>
+
+  @Override
+  public int size() {
+<span class="fc" id="L145">    return cache.size();</span>
+  }
+
+  @Override
+  public Iterator&lt;Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;&gt; iterator() {
+<span class="fc" id="L150">    return new TranslatingIterator&lt;</span>
+      Map.Entry&lt;K, Object&gt;,
+      Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;
+      &gt;(
+      new ValueMapper(),
+      cache.entrySet().iterator()
+    );
+  }
+
+  @Override
+  public CallableSnapshot&lt;V, E&gt; getIfPresent(K key) {
+<span class="fc" id="L161">    Object value = cache.get(key);</span>
+
+<span class="fc bfc" id="L163" title="All 2 branches covered.">    if (value == null) {</span>
+<span class="fc" id="L164">      return null;</span>
+    } else {
+<span class="fc" id="L166">      return new CallableSnapshot&lt;V, E&gt;(</span>
+        new CallableFutureHelper(value),
+        new CastingExceptionHandler&lt;E&gt;()
+      );
+    }
+  }
+
+  /**
+   * executes a FutureHelper to get a value from a cache entry if need be
+   * 
+   * @param value cache entry to decode
+   * @return actual value in the cache
+   * @throws E on error producing the value
+   */
+  private V decodeValue(Object value) throws E {
+<span class="fc bfc" id="L181" title="All 2 branches covered.">    if (value instanceof PrivateFutureHelper) {</span>
+<span class="fc" id="L182">      return ((FutureHelper&lt;V, E&gt;) value).safeGet();</span>
+    } else {
+<span class="fc" id="L184">      return (V)value;</span>
+    }
+  }
+
+<span class="fc" id="L188">  private class ValueMapper implements</span>
+    Mapper&lt;Map.Entry&lt;K, Object&gt;, Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;&gt; {
+    @Override
+    public Map.Entry&lt;K, CallableSnapshot&lt;V, E&gt;&gt; map(
+      final Map.Entry&lt;K, Object&gt; input
+    ) {
+<span class="fc" id="L194">      return new AbstractMap.SimpleImmutableEntry&lt;K, CallableSnapshot&lt;V, E&gt;&gt;(</span>
+        input.getKey(),
+        new CallableSnapshot&lt;V, E&gt;(
+          new CallableFutureHelper(input.getValue()), 
+          new CastingExceptionHandler&lt;E&gt;() // OK to cast b/c know exception type
+        )
+      );
+    }
+  }
+
+  private class CallableFutureHelper implements Callable {
+    private final Object value;
+
+<span class="fc" id="L207">    private CallableFutureHelper(Object value) {</span>
+<span class="fc" id="L208">      this.value = value;</span>
+<span class="fc" id="L209">    }</span>
+
+    @Override
+    public V call() throws Exception {
+<span class="fc" id="L213">      return decodeValue(value);</span>
+    }
+  }
+
+  /**
+   * this is a marker class only. Effectively we are using the class type of
+   * this object in our cache to indicate that we need to call 
+   * FutureHelper.safeGet() to produce a value. Obviously, being a private
+   * class, no one can create a value of this type, so...
+   * 
+   * @param &lt;V2&gt;
+   * @param &lt;E2&gt;
+   */
+  private static class PrivateFutureHelper&lt;V2, E2 extends Exception&gt; 
+    extends FutureHelper&lt;V2, E2&gt;{
+    private PrivateFutureHelper(
+      Callable&lt;V2&gt; callable,
+      ExceptionHandler&lt;E2&gt; exceptionHandler
+    ) {
+<span class="fc" id="L232">      super(callable, exceptionHandler);</span>
+<span class="fc" id="L233">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

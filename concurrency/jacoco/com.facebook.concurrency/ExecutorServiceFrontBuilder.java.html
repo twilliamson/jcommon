@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ExecutorServiceFrontBuilder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">ExecutorServiceFrontBuilder.java</span></div><h1>ExecutorServiceFrontBuilder.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+
+public class ExecutorServiceFrontBuilder {
+  private final ExecutorService coreExecutor;
+<span class="pc" id="L24">  private int maxInstanceThreads = 1;</span>
+<span class="pc" id="L25">  private long maxTimeSlice = Long.MAX_VALUE;</span>
+<span class="pc" id="L26">  private TimeUnit maxTimeSliceUnit = TimeUnit.SECONDS;</span>
+<span class="pc" id="L27">  private String drainerBaseName = &quot;Drainer&quot;;</span>
+
+  /**
+   * Basic constructor
+   *
+   * @param coreExecutor
+   */
+<span class="nc" id="L34">  public ExecutorServiceFrontBuilder(ExecutorService coreExecutor) {</span>
+<span class="nc" id="L35">    this.coreExecutor = coreExecutor;</span>
+<span class="nc" id="L36">  }</span>
+
+  /**
+   * Constructor that limits the maximum number of threads that can be used
+   * from the core executor
+   *
+   * @param coreExecutor
+   * @param maxCoreThreads
+   */
+  public ExecutorServiceFrontBuilder(
+    ExecutorService coreExecutor, int maxCoreThreads
+<span class="fc" id="L47">  ) {</span>
+<span class="fc" id="L48">    this.coreExecutor = new ExecutorServiceFront(</span>
+      new LinkedBlockingQueue&lt;Runnable&gt;(),
+      coreExecutor,
+      maxCoreThreads
+    );
+<span class="fc" id="L53">  }</span>
+
+  /**
+   * Limit the maximum number of threads that can be used by a single
+   * constructed ExecutorServiceFront
+   *
+   * @param maxInstanceThreads
+   * @return
+   */
+  public ExecutorServiceFrontBuilder setMaxInstanceThreads(
+    int maxInstanceThreads
+  ) {
+<span class="fc" id="L65">    this.maxInstanceThreads = maxInstanceThreads;</span>
+<span class="fc" id="L66">    return this;</span>
+  }
+
+  /**
+   * set the base name
+   * 
+   * @param name name to use
+   */
+  public ExecutorServiceFrontBuilder setDrainerBaseName(String name) {
+<span class="nc" id="L75">    this.drainerBaseName = name;</span>
+    
+<span class="nc" id="L77">    return this;</span>
+  }
+
+  /**
+   * Limit the maximum time slice that a constructed ExecutorServiceFront
+   * drainer can be run
+   *
+   * @param maxTimeSlice
+   * @param maxTimeSliceUnit
+   * @return
+   */
+  public ExecutorServiceFrontBuilder setMaxTimeSlice(
+    long maxTimeSlice, TimeUnit maxTimeSliceUnit
+  ) {
+<span class="nc" id="L91">    this.maxTimeSlice = maxTimeSlice;</span>
+<span class="nc" id="L92">    this.maxTimeSliceUnit = maxTimeSliceUnit;</span>
+<span class="nc" id="L93">    return this;</span>
+  }
+
+  public ExecutorServiceFront build() {
+<span class="fc" id="L97">    return new ExecutorServiceFront(</span>
+      new LinkedBlockingQueue&lt;Runnable&gt;(),
+      coreExecutor,
+      drainerBaseName,
+      maxInstanceThreads,
+      maxTimeSlice,
+      maxTimeSliceUnit
+    );
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TaskGroup.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon concurrency</a> &gt; <a href="index.html" class="el_package">com.facebook.concurrency</a> &gt; <span class="el_source">TaskGroup.java</span></div><h1>TaskGroup.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.concurrency;
+
+import com.facebook.collections.Pair;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Provides a grouping of tasks so that when executed, the caller will have
+ * a latch to wait on to indicate when all registered tasks have completed.
+ * Tasks may be registered with the default executor, or with another executor.
+ */
+public class TaskGroup {
+  private final ExecutorService defaultExecutor;
+<span class="fc" id="L33">  private final Collection&lt;Pair&lt;ExecutorService, Runnable&gt;&gt; taskPairs =</span>
+    new ArrayList&lt;Pair&lt;ExecutorService, Runnable&gt;&gt;();
+
+<span class="fc" id="L36">  public TaskGroup(ExecutorService defaultExecutor) {</span>
+<span class="fc" id="L37">    this.defaultExecutor = defaultExecutor;</span>
+<span class="fc" id="L38">  }</span>
+
+  public TaskGroup() {
+<span class="fc" id="L41">    this(null);</span>
+<span class="fc" id="L42">  }</span>
+
+  public synchronized void register(
+    ExecutorService executorService, Runnable task
+  ) {
+<span class="fc" id="L47">    taskPairs.add(new Pair&lt;ExecutorService, Runnable&gt;(executorService, task));</span>
+<span class="fc" id="L48">  }</span>
+
+  public void register(Runnable task) {
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">    if (defaultExecutor == null) {</span>
+<span class="nc" id="L52">      throw new IllegalStateException(&quot;No default executor specified&quot;);</span>
+    }
+<span class="fc" id="L54">    register(defaultExecutor, task);</span>
+<span class="fc" id="L55">  }</span>
+
+  public synchronized FinishLatch execute() {
+<span class="fc" id="L58">    final CountDownLatch finishLatch =</span>
+      new CountDownLatch(taskPairs.size());
+<span class="fc bfc" id="L60" title="All 2 branches covered.">    for (final Pair&lt;ExecutorService, Runnable&gt; taskPair : taskPairs) {</span>
+<span class="fc" id="L61">      taskPair.getFirst().execute(new Runnable() {</span>
+        @Override
+        public void run() {
+          try {
+<span class="fc" id="L65">            taskPair.getSecond().run();</span>
+          } finally {
+<span class="pc" id="L67">            finishLatch.countDown();</span>
+<span class="fc" id="L68">          }</span>
+<span class="fc" id="L69">        }</span>
+      });
+<span class="fc" id="L71">    }</span>
+<span class="fc" id="L72">    return new FinishLatch(finishLatch);</span>
+  }
+
+  public static class FinishLatch {
+    private final CountDownLatch finishLatch;
+
+<span class="fc" id="L78">    private FinishLatch(CountDownLatch finishLatch) {</span>
+<span class="fc" id="L79">      this.finishLatch = finishLatch;</span>
+<span class="fc" id="L80">    }</span>
+
+    public boolean await(long waitTime, TimeUnit waitTimeUnit)
+      throws InterruptedException {
+<span class="nc" id="L84">      return finishLatch.await(waitTime, waitTimeUnit);</span>
+    }
+
+    public void await() throws InterruptedException {
+<span class="fc" id="L88">      finishLatch.await();</span>
+<span class="fc" id="L89">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
