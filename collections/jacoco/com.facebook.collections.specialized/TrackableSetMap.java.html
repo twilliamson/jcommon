@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TrackableSetMap.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections.specialized</a> &gt; <span class="el_source">TrackableSetMap.java</span></div><h1>TrackableSetMap.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections.specialized;
+
+import com.facebook.collections.SetFactory;
+import com.facebook.collections.SetMap;
+import com.facebook.collections.SetMapImpl;
+import com.facebook.collections.Trackable;
+import com.facebook.collections.WrappedIterator;
+
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * decorates a SetMap so that a caller can tell if the data structure
+ * has changed.
+ *
+ * NOTE: if a caller modifies the set directly:
+ *   Set&lt;V&gt; set = setMap.get(key);
+ *   set.add(key);
+ *
+ * This will not be reflected in the version
+ *
+ * @param &lt;K&gt;
+ * @param &lt;V&gt;
+ * @param &lt;S&gt;
+ */
+public class TrackableSetMap&lt;K, V, S extends Set&lt;V&gt;&gt;
+  implements SetMap&lt;K,V,S&gt;, Trackable {
+
+  private final SetMap&lt;K,V,S&gt; delegate;
+<span class="pc" id="L47">  private final AtomicBoolean dirty = new AtomicBoolean(false);</span>
+
+<span class="fc" id="L49">  public TrackableSetMap(SetMap&lt;K, V, S&gt; delegate) {</span>
+<span class="fc" id="L50">    this.delegate = delegate;</span>
+<span class="fc" id="L51">  }</span>
+
+<span class="nc" id="L53">  public TrackableSetMap(SetFactory&lt;V, S&gt; setFactory) {</span>
+<span class="nc" id="L54">    delegate = new SetMapImpl&lt;K, V, S&gt;(setFactory);</span>
+<span class="nc" id="L55">  }</span>
+
+  @Override
+  public boolean add(K key, V item) {
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">    if (delegate.add(key, item)) {</span>
+<span class="fc" id="L60">      dirty.set(true);</span>
+
+<span class="fc" id="L62">      return true;</span>
+    }
+
+<span class="nc" id="L65">    return false;</span>
+  }
+
+  @Override
+  public S removeSet(K key) {
+<span class="nc" id="L70">    S value = delegate.removeSet(key);</span>
+
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    if (value != null) {</span>
+<span class="nc" id="L73">      dirty.set(true);</span>
+    }
+
+<span class="nc" id="L76">    return value;</span>
+  }
+
+  @Override
+  public boolean remove(K key, V item) {
+<span class="nc bnc" id="L81" title="All 2 branches missed.">    if (delegate.remove(key, item)) {</span>
+<span class="nc" id="L82">      dirty.set(true);</span>
+
+<span class="nc" id="L84">      return true;</span>
+    }
+
+<span class="nc" id="L87">    return false;</span>
+  }
+
+  @Override
+  public boolean hasChanged() {
+<span class="fc" id="L92">    return dirty.getAndSet(false);</span>
+  }
+
+  @Override
+  public S get(K key) {
+<span class="nc" id="L97">    return delegate.get(key);</span>
+  }
+
+  @Override
+  public Iterator&lt;Map.Entry&lt;K, S&gt;&gt; iterator() {
+<span class="nc" id="L102">    return new WrappedIterator&lt;Map.Entry&lt;K, S&gt;&gt;(delegate.iterator()) {</span>
+      @Override
+      public void remove() {
+<span class="nc" id="L105">        super.remove();</span>
+<span class="nc" id="L106">        dirty.set(true);</span>
+<span class="nc" id="L107">      }</span>
+    };
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

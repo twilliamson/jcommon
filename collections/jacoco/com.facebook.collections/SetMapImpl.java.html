@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SetMapImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">SetMapImpl.java</span></div><h1>SetMapImpl.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * Highly concurrent (no limit, uses ReadLock) for adds.  Removes hold
+ * the write lock if the set is found to be empty and an attempt to remove it
+ * from the map is made 
+ *
+ * @param &lt;K&gt; type for the key
+ * @param &lt;V&gt; type of the elements in the set
+ */
+public class SetMapImpl&lt;K, V, S extends Set&lt;V&gt;&gt; implements SetMap&lt;K,V,S&gt; {
+<span class="fc" id="L36">  private final ConcurrentMap&lt;K, S&gt; sets =</span>
+    new ConcurrentHashMap&lt;K, S&gt;();
+<span class="fc" id="L38">  private final ReadWriteLock removalLock = new ReentrantReadWriteLock();</span>
+  private final SetFactory&lt;V, S&gt; setFactory;
+
+<span class="fc" id="L41">  public SetMapImpl(SetFactory&lt;V, S&gt; setFactory) {</span>
+<span class="fc" id="L42">    this.setFactory = setFactory;</span>
+<span class="fc" id="L43">  }</span>
+
+  @Override
+  public boolean add(K key, V item) {
+    // we have to make sure that the set isn't removed while we add to it
+<span class="fc" id="L48">    removalLock.readLock().lock();</span>
+
+    try {
+<span class="fc" id="L51">      S set = sets.get(key);</span>
+
+<span class="fc bfc" id="L53" title="All 2 branches covered.">      if (set == null) {</span>
+<span class="fc" id="L54">        set = setFactory.create();</span>
+  
+<span class="fc" id="L56">        S existingSet = sets.putIfAbsent(key, set);</span>
+  
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (existingSet != null) {</span>
+<span class="nc" id="L59">          set = existingSet;</span>
+        }
+      }
+
+<span class="fc" id="L63">      return set.add(item);</span>
+    } finally {
+<span class="pc" id="L65">      removalLock.readLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public S removeSet(K key) {
+    // unconditional remove, so no lock held
+<span class="nc" id="L72">    return sets.remove(key);</span>
+  }
+
+  @Override
+  public boolean remove(K key, V item) {
+<span class="nc" id="L77">    S set = sets.get(key);</span>
+
+<span class="nc bnc" id="L79" title="All 2 branches missed.">    if (set == null) {</span>
+<span class="nc" id="L80">      return false;</span>
+    }
+
+    // did we remove the value from the underlying set
+<span class="nc" id="L84">    boolean removed = set.remove(item);</span>
+
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    if (set.isEmpty()) {</span>
+      // conditional remove requires that no elements be added to the set
+      //during this time
+<span class="nc" id="L89">      removalLock.writeLock().lock();</span>
+      try {
+<span class="nc" id="L91">        sets.remove(key, Collections.EMPTY_SET);</span>
+      } finally {
+<span class="nc" id="L93">        removalLock.writeLock().unlock();</span>
+<span class="nc" id="L94">      }</span>
+    }
+
+<span class="nc" id="L97">    return removed;</span>
+  }
+
+  @Override
+  public S get(K key) {
+<span class="nc" id="L102">    return sets.get(key);</span>
+  }
+
+  @Override
+  public Iterator&lt;Map.Entry&lt;K, S&gt;&gt; iterator() {
+<span class="nc" id="L107">    return sets.entrySet().iterator();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

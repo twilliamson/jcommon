@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PackedByteArray.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">PackedByteArray.java</span></div><h1>PackedByteArray.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+<span class="pc bpc" id="L29" title="1 of 2 branches missed.">public class PackedByteArray {</span>
+  private static final byte DEFAULT_DELIMITER = 1;
+  private static final byte DEFAULT_TERMINAL_DELIMITER = 0;
+  private static final int MAGIC_INITIAL_BYTE_ARRAY_SIZE = 256;
+
+  /**
+   * @param arrays
+   * @return
+   * @see #pack(java.util.List)
+   */
+  public static byte[] pack(byte[]... arrays) {
+<span class="fc" id="L40">    return pack(Arrays.asList(arrays));</span>
+  }
+
+  /**
+   * reads from a DataInput a byte[] till a delimiter is encountered.
+   * Return the bytes (not including the delimiter)
+   *
+   * @param in
+   * @param terminalDelimiter
+   * @return
+   * @throws IOException
+   */
+  public static byte[] readByteArray(
+    DataInput in, byte terminalDelimiter
+  )
+    throws IOException {
+
+    // 256 magic number--just guessing it won't be bigger. If it is,
+    // ArrayList will resize
+<span class="nc" id="L59">    List&lt;Byte&gt; byteList = new ArrayList&lt;Byte&gt;(MAGIC_INITIAL_BYTE_ARRAY_SIZE);</span>
+    byte b;
+
+<span class="nc bnc" id="L62" title="All 2 branches missed.">    while ((b = in.readByte()) != terminalDelimiter) {</span>
+<span class="nc" id="L63">      byteList.add(b);</span>
+    }
+
+<span class="nc" id="L66">    return byteListToArray(byteList);</span>
+  }
+
+  /**
+   * reads from a DataInput a List&lt;byte[]&gt;
+   *
+   * @param in
+   * @param delimiter
+   * @param terminalDelimiter
+   * @return
+   * @throws IOException
+   * @see #packComparable(java.util.List, byte, byte)  for format
+   */
+  public static List&lt;byte[]&gt; readByteArrayList(
+    DataInput in, byte delimiter, byte terminalDelimiter
+  )
+    throws IOException {
+
+    // 256 magic number--just guessing it won't be bigger. If it is,
+    // ArrayList will resize
+<span class="nc" id="L86">    List&lt;Byte&gt; byteList = new ArrayList&lt;Byte&gt;(MAGIC_INITIAL_BYTE_ARRAY_SIZE);</span>
+    byte b;
+
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    while ((b = in.readByte()) != terminalDelimiter) {</span>
+<span class="nc" id="L90">      byteList.add(b);</span>
+    }
+
+<span class="nc" id="L93">    byteList.add(terminalDelimiter);</span>
+
+<span class="nc" id="L95">    return unpackComparable(</span>
+      byteListToArray(byteList), delimiter, terminalDelimiter
+    );
+  }
+
+  public static byte[] packComparable(byte[]... arrays) {
+<span class="fc" id="L101">    return packComparable(Arrays.asList(arrays));</span>
+  }
+
+  public static byte[] packComparable(List&lt;byte[]&gt; arrays) {
+<span class="fc" id="L105">    return packComparable(</span>
+      arrays, DEFAULT_DELIMITER, DEFAULT_TERMINAL_DELIMITER
+    );
+  }
+
+  /**
+   * note: the values delimiter and terminalDelimiter
+   * must not only NOT appear in the byte[], but be less than any other
+   * value in the byte array.  Defaults used in helper methods are 0 and 1.
+   * These values in the packed byte[] to make it comparable as an unsigned
+   * byte []
+   *
+   * A future extension would use duplication/padding (0 -&gt; 00, 00 -&gt; 000, etc)
+   * in order to handle this, but it's not needed yet.
+   *
+   * In practice, the byte values are for printable ascii chars and binary data
+   * may be base64 encoded as long as all values are byte values &gt; 1
+   *
+   * @param arrays array of byte[] to pack
+   * @param delimiter recommend 0
+   * @param terminalDelimiter recommend 1
+   * @return
+   */
+  public static byte[] packComparable(
+    List&lt;byte[]&gt; arrays, byte delimiter, byte terminalDelimiter
+  ) {
+    // item1,delim,item2,delim, ..., terminalDelmiter
+<span class="fc" id="L132">    int packedSize = 0; // terminal delim length included below by overcount</span>
+
+<span class="fc bfc" id="L134" title="All 2 branches covered.">    for (byte[] array : arrays) {</span>
+<span class="fc" id="L135">      packedSize += array.length + 1; // each item + delim</span>
+<span class="fc" id="L136">    }</span>
+
+<span class="fc" id="L138">    ByteArrayOutputStream byteArrayOutputStream =</span>
+      new ByteArrayOutputStream(packedSize);
+<span class="fc" id="L140">    DataOutput output = new DataOutputStream(byteArrayOutputStream);</span>
+
+    try {
+<span class="fc" id="L143">      boolean first = true;</span>
+
+<span class="fc bfc" id="L145" title="All 2 branches covered.">      for (byte[] array : arrays) {</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (!first) {</span>
+<span class="fc" id="L147">          output.write(delimiter);</span>
+        }
+
+<span class="fc" id="L150">        output.write(array);</span>
+<span class="fc" id="L151">        first = false;</span>
+<span class="fc" id="L152">      }</span>
+
+<span class="fc" id="L154">      output.write(terminalDelimiter);</span>
+
+<span class="nc" id="L156">    } catch (IOException e) {</span>
+<span class="nc" id="L157">      throw new RuntimeException(&quot;no reason we should see this&quot;, e);</span>
+<span class="fc" id="L158">    }</span>
+
+<span class="fc" id="L160">    byte[] bytes = byteArrayOutputStream.toByteArray();</span>
+
+<span class="fc" id="L162">    return bytes;</span>
+  }
+
+  public static List&lt;byte[]&gt; unpackComparable(byte[] packedArray) {
+<span class="fc" id="L166">    return unpackComparable(packedArray, (byte)1, (byte)0);</span>
+  }
+
+  public static List&lt;byte[]&gt; unpackComparable(
+    byte[] packedArray, byte delimiter, byte terminalDelimiter
+  ) {
+<span class="fc" id="L172">    List&lt;byte[]&gt; results = new ArrayList&lt;byte[]&gt;();</span>
+<span class="fc" id="L173">    List&lt;Byte&gt; currentToken =</span>
+      new ArrayList&lt;Byte&gt;(MAGIC_INITIAL_BYTE_ARRAY_SIZE); // very magic
+
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">    for (int i = 0; i &lt; packedArray.length; i++) {</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">      if (packedArray[i] == terminalDelimiter) {</span>
+<span class="fc" id="L178">        results.add(byteListToArray(currentToken));</span>
+        // end of entire byte array
+<span class="fc" id="L180">        break;</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">      } else if (packedArray[i] == delimiter) {</span>
+        // end of an element, store and move to next
+<span class="fc" id="L183">        results.add(byteListToArray(currentToken));</span>
+<span class="fc" id="L184">        currentToken = new ArrayList&lt;Byte&gt;(MAGIC_INITIAL_BYTE_ARRAY_SIZE);</span>
+      } else {
+        // put byte into current array
+<span class="fc" id="L187">        currentToken.add(packedArray[i]);</span>
+      }
+    }
+
+<span class="fc" id="L191">    return results;</span>
+  }
+
+  /**
+   * packs a list of byte[] into a single array in the format
+   * &lt;p/&gt;
+   * {@literal
+   * &lt;numItems&gt;&lt;len1,len2,...len_n&gt;&lt;item1,item2,...item_n&gt; }
+   *
+   * @param arrayList
+   * @return packed byte array
+   */
+  public static byte[] pack(List&lt;byte[]&gt; arrays) {
+    // numItems(short) + len1(int) + len2 + ...
+<span class="fc" id="L205">    int packedSize = 2 + 4 * arrays.size();</span>
+
+<span class="fc bfc" id="L207" title="All 2 branches covered.">    for (byte[] array : arrays) {</span>
+<span class="fc" id="L208">      packedSize += array.length;</span>
+<span class="fc" id="L209">    }</span>
+<span class="fc" id="L210">    ByteArrayOutputStream byteArrayOutputStream =</span>
+      new ByteArrayOutputStream(packedSize);
+<span class="fc" id="L212">    DataOutput output = new DataOutputStream(byteArrayOutputStream);</span>
+
+    try {
+<span class="fc" id="L215">      output.writeShort(arrays.size());</span>
+
+<span class="fc bfc" id="L217" title="All 2 branches covered.">      for (byte[] array : arrays) {</span>
+<span class="fc" id="L218">        output.writeInt(array.length);</span>
+<span class="fc" id="L219">      }</span>
+
+<span class="fc bfc" id="L221" title="All 2 branches covered.">      for (byte[] array : arrays) {</span>
+<span class="fc" id="L222">        output.write(array);</span>
+<span class="fc" id="L223">      }</span>
+
+<span class="nc" id="L225">    } catch (IOException e) {</span>
+<span class="nc" id="L226">      throw new RuntimeException(&quot;no reason we should see this&quot;, e);</span>
+<span class="fc" id="L227">    }</span>
+
+<span class="fc" id="L229">    byte[] bytes = byteArrayOutputStream.toByteArray();</span>
+
+<span class="fc" id="L231">    return bytes;</span>
+  }
+
+  /**
+   * unpack an array packed by pack()
+   *
+   * @param packedArray
+   * @return
+   * @see #pack(byte[]...)
+   */
+  public static byte[][] unpack(byte[] packedArray) {
+    try {
+<span class="fc" id="L243">      DataInput input = new DataInputStream(</span>
+        new ByteArrayInputStream(packedArray)
+      );
+
+<span class="fc" id="L247">      short numItems = input.readShort();</span>
+
+<span class="pc bpc" id="L249" title="2 of 4 branches missed.">      assert numItems &gt;= 0;</span>
+
+<span class="fc" id="L251">      int[] lens = new int[numItems];</span>
+<span class="fc" id="L252">      byte[][] arrays = new byte[numItems][];</span>
+
+<span class="fc bfc" id="L254" title="All 2 branches covered.">      for (int i = 0; i &lt; numItems; i++) {</span>
+<span class="fc" id="L255">        lens[i] = input.readInt();</span>
+      }
+
+<span class="fc bfc" id="L258" title="All 2 branches covered.">      for (int i = 0; i &lt; numItems; i++) {</span>
+<span class="fc" id="L259">        arrays[i] = new byte[lens[i]];</span>
+
+<span class="fc" id="L261">        input.readFully(arrays[i]);</span>
+      }
+
+<span class="fc" id="L264">      return arrays;</span>
+<span class="nc" id="L265">    } catch (IOException e) {</span>
+<span class="nc" id="L266">      throw new RuntimeException(&quot;shouldn't see this either&quot;, e);</span>
+    }
+  }
+
+  /**
+   * get an element from a packed array
+   *
+   * @param packedArray
+   * @param pos
+   * @return
+   * @see #pack(byte[]...)
+   */
+  public static byte[] getElement(byte[] packedArray, int pos) {
+<span class="fc" id="L279">    short numItems = (short) ((packedArray[0] &lt;&lt; 8) | packedArray[1]);</span>
+
+<span class="pc bpc" id="L281" title="1 of 2 branches missed.">    if (pos &gt; numItems - 1) {</span>
+<span class="nc" id="L282">      throw new IllegalArgumentException(</span>
+        String.format(
+          &quot;index %d is greater than max %d&quot;,
+          pos, numItems - 1
+        )
+      );
+    }
+
+<span class="fc" id="L290">    int i = 0;</span>
+    // numItems(short) + itemLen1 + itemLen2 + ...
+<span class="fc" id="L292">    int dataPtr = 2 + numItems * 4;</span>
+<span class="fc" id="L293">    int dataLen = 0;</span>
+<span class="pc bpc" id="L294" title="1 of 2 branches missed.">    while (i &lt; numItems) {</span>
+<span class="fc" id="L295">      int j = 2 + (i * 4);</span>
+<span class="fc" id="L296">      int len = byteToInt(packedArray, j);</span>
+
+<span class="pc bpc" id="L298" title="2 of 4 branches missed.">      assert len &gt;= 0;</span>
+
+<span class="fc bfc" id="L300" title="All 2 branches covered.">      if (i &lt; pos) {</span>
+<span class="fc" id="L301">        dataPtr += len;</span>
+      } else {
+<span class="fc" id="L303">        dataLen = len;</span>
+<span class="fc" id="L304">        break;</span>
+      }
+
+<span class="fc" id="L307">      i++;</span>
+<span class="fc" id="L308">    }</span>
+
+<span class="fc" id="L310">    return Arrays.copyOfRange(packedArray, dataPtr, dataPtr + dataLen);</span>
+  }
+
+  /**
+   * not used, but alternative method to convert byte[4] -&gt; int
+   *
+   * @param bytes
+   * @param i
+   * @return
+   */
+  public static int byteToIntAlt(byte[] bytes, int i) {
+<span class="nc" id="L321">    DataInputStream stream = new DataInputStream(</span>
+      new ByteArrayInputStream(bytes, i, 4)
+    );
+    int value;
+
+    try {
+<span class="nc" id="L327">      value = stream.readInt();</span>
+<span class="nc" id="L328">    } catch (IOException e) {</span>
+<span class="nc" id="L329">      throw new RuntimeException(e);</span>
+<span class="nc" id="L330">    }</span>
+
+<span class="nc" id="L332">    return value;</span>
+  }
+
+
+  public static byte[] byteListToArray(List&lt;Byte&gt; byteList) {
+<span class="fc" id="L337">    byte[] result = new byte[byteList.size()];</span>
+
+<span class="fc" id="L339">    int i = 0;</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">    for (Byte b : byteList) {</span>
+<span class="fc" id="L341">      result[i++] = b;</span>
+<span class="fc" id="L342">    }</span>
+
+<span class="fc" id="L344">    return result;</span>
+  }
+
+
+  /**
+   * copied from java's Bits.getInt() method which is what's used underneath
+   * the DataOutput.writeInt() above
+   *
+   * @param bytes  array containing a 4-byte integer to convert
+   * @param offset offset where 4-byte integer starts
+   * @return
+   */
+  public static int byteToInt(byte[] bytes, int offset) {
+<span class="fc" id="L357">    return ((bytes[offset + 3] &amp; 0xFF)) +</span>
+      ((bytes[offset + 2] &amp; 0xFF) &lt;&lt; 8) +
+      ((bytes[offset + 1] &amp; 0xFF) &lt;&lt; 16) +
+      ((bytes[offset]) &lt;&lt; 24);
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

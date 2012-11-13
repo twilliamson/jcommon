@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DynamicIterator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">DynamicIterator.java</span></div><h1>DynamicIterator.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import com.google.common.base.Preconditions;
+import com.google.common.base.Throwables;
+import com.google.common.collect.AbstractIterator;
+
+import javax.annotation.concurrent.GuardedBy;
+import java.util.ArrayDeque;
+import java.util.Queue;
+import java.util.concurrent.Semaphore;
+
+public class DynamicIterator&lt;T&gt; extends AbstractIterator&lt;T&gt; {
+
+  private static final int DEFAULT_INITIAL_SIZE = 16;
+
+<span class="fc" id="L31">  private final Semaphore available = new Semaphore(0);</span>
+
+  @GuardedBy(&quot;queue&quot;)
+  private final Queue&lt;T&gt; queue;
+
+  @GuardedBy(&quot;queue&quot;)
+  private boolean finished;
+
+<span class="fc" id="L39">  public DynamicIterator(int initialSize) {</span>
+<span class="pc bpc" id="L40" title="1 of 2 branches missed.">    Preconditions.checkArgument(initialSize &gt;= 0, &quot;initialSize must be &gt;= 0&quot;);</span>
+
+<span class="fc" id="L42">    this.queue = new ArrayDeque&lt;T&gt;(initialSize);</span>
+<span class="fc" id="L43">  }</span>
+
+  public DynamicIterator() {
+<span class="nc" id="L46">    this(DEFAULT_INITIAL_SIZE);</span>
+<span class="nc" id="L47">  }</span>
+
+  public boolean add(T element) throws InterruptedException {
+<span class="fc" id="L50">    Preconditions.checkNotNull(element, &quot;element is null&quot;);</span>
+
+    boolean added;
+<span class="fc" id="L53">    synchronized (queue) {</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">      Preconditions.checkState(!finished, &quot;%s already finished&quot;, getClass().getName());</span>
+<span class="fc" id="L55">      added = queue.add(element);</span>
+<span class="fc" id="L56">    }</span>
+
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">    if (added) {</span>
+<span class="fc" id="L59">      available.release();</span>
+    }
+
+<span class="fc" id="L62">    return added;</span>
+  }
+
+  public void finish() {
+<span class="fc" id="L66">    synchronized (queue) {</span>
+<span class="fc" id="L67">      finished = true;</span>
+<span class="pc" id="L68">    }</span>
+
+    // Do one final release to wake up the consumer if it's waiting.
+    // The consumer will see a &quot;null&quot; as the last element, indicating we're done
+<span class="fc" id="L72">    available.release();</span>
+<span class="fc" id="L73">  }</span>
+
+  @Override
+  protected T computeNext() {
+    try {
+<span class="fc" id="L78">      available.acquire();</span>
+
+<span class="fc" id="L80">      synchronized (queue) {</span>
+<span class="fc" id="L81">        T element = queue.poll();</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (element == null) {</span>
+<span class="fc" id="L83">          Preconditions.checkState(finished, &quot;Expected iterator to be finished&quot;);</span>
+<span class="fc" id="L84">          endOfData();</span>
+        }
+<span class="fc" id="L86">        return element;</span>
+<span class="nc" id="L87">      }</span>
+<span class="nc" id="L88">    } catch (InterruptedException e) {</span>
+<span class="nc" id="L89">      Thread.currentThread().interrupt();</span>
+<span class="nc" id="L90">      throw Throwables.propagate(e);</span>
+    }
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

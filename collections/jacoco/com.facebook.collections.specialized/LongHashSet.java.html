@@ -1,0 +1,621 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>LongHashSet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections.specialized</a> &gt; <span class="el_source">LongHashSet.java</span></div><h1>LongHashSet.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections.specialized;
+
+import com.facebook.collections.Trackable;
+import com.facebook.collectionsbase.Mapper;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.GuardedBy;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.ConcurrentModificationException;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+/**
+ * stores a set of non-negative long values using a fixed-size array.
+ *
+ * this class is thread-safe, and allows decent parallelism using a
+ * ReadWriteLock.  The iterator is thread-safe, but can still throw
+ * a ConcurrentModificationException (TODO: can probably fix this)
+ */
+public class LongHashSet implements SnapshotableSet&lt;Long&gt;, Trackable {
+  // these are values for slots
+  private static final long INITIAL_EMPTY = -1;
+  private static final long REMOVED_EMPTY = -2;
+  // this is a reserved return value
+  private static final int FULL_SET = -3;
+  private static final float MIN_LOAD_FACTOR = 2 / 3.0f;
+  private static final float MAX_LOAD_FACTOR = 9 / 10.0f;
+
+  private final Mapper&lt;Long, Integer&gt; hashFunction;
+  // guards all mutations to values
+<span class="fc" id="L55">  private final ReadWriteLock lock = new ReentrantReadWriteLock();</span>
+<span class="fc" id="L56">  private final AtomicLong version = new AtomicLong(0);</span>
+<span class="fc" id="L57">  private long lastCheckedVersion = 0;</span>
+  @GuardedBy(&quot;lock&quot;)
+  private volatile long[] values;
+<span class="fc" id="L60">  private AtomicInteger size = new AtomicInteger(0);</span>
+  private final int maxCapacity;
+
+  public LongHashSet(
+    int initialCapacity, int maxCapacity, Mapper&lt;Long, Integer&gt; hashFunction
+<span class="fc" id="L65">  ) {</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">    Preconditions.checkArgument(</span>
+      initialCapacity &lt;= maxCapacity,
+      &quot;initial capacity of %s cannot be larger than max of %s&quot;,
+      initialCapacity,
+      maxCapacity
+    );
+<span class="fc" id="L72">    this.maxCapacity = maxCapacity;</span>
+<span class="fc" id="L73">    initArrays(initialCapacity);</span>
+<span class="fc" id="L74">    this.hashFunction = hashFunction;</span>
+<span class="fc" id="L75">  }</span>
+
+  private void initArrays(int capacity) {
+<span class="fc" id="L78">    values = new long[capacity];</span>
+<span class="fc" id="L79">    Arrays.fill(values, INITIAL_EMPTY);</span>
+<span class="fc" id="L80">  }</span>
+
+  /**
+   * creates a bounded set with an initial capacity
+   *
+   * @param initialCapacity
+   * @param maxCapacity
+   */
+  public LongHashSet(int initialCapacity, int maxCapacity) {
+<span class="fc" id="L89">    this(</span>
+      initialCapacity,
+      maxCapacity,
+<span class="fc" id="L92">      new Mapper&lt;Long, Integer&gt;() {</span>
+        @Override
+        public Integer map(Long input) {
+<span class="fc" id="L95">          return (int) (input ^ (input &gt;&gt;&gt; 32));</span>
+        }
+      }
+    );
+<span class="fc" id="L99">  }</span>
+
+  private void resize() {
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">    if (values.length == maxCapacity) {</span>
+<span class="nc" id="L103">      throw new IllegalStateException(</span>
+        String.format(
+          &quot;cannot resize: max capacity of %d already reached&quot;, maxCapacity
+        )
+      );
+    }
+
+<span class="fc" id="L110">    int desiredSize = (int) (values.length / MIN_LOAD_FACTOR);</span>
+<span class="fc" id="L111">    int newSize = Math.min(desiredSize, maxCapacity);</span>
+
+<span class="fc" id="L113">    long[] oldValues = values;</span>
+<span class="fc" id="L114">    values = new long[newSize];</span>
+<span class="fc" id="L115">    internalClear();</span>
+
+<span class="fc bfc" id="L117" title="All 2 branches covered.">    for (long value : oldValues) {</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">      if (value &gt;= 0) {</span>
+<span class="fc" id="L119">        internalAdd(value);</span>
+      }
+    }
+<span class="fc" id="L122">  }</span>
+
+  private int hashValueOf(Long aLong) {
+<span class="fc" id="L125">    return Math.abs(hashFunction.map(aLong)) % values.length;</span>
+  }
+
+  /**
+   * returns location of either the value, or the next location to place
+   * the value
+   *
+   * @param aLong
+   * @return if aLong is present in the set, returns the index of it; if it
+   *         is not present, returns the index of where it may be placed,
+   *         or FULL_SET(-2) if the set is full
+   */
+  private int findLocationOf(long aLong) {
+<span class="fc" id="L138">    int index = hashValueOf(aLong);</span>
+<span class="fc" id="L139">    int firstEmptyIndex = -1;</span>
+<span class="fc" id="L140">    int total = 0;</span>
+
+    // stop if we find aLong or an empty slot
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">    while (values[index] != aLong) {</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">      if (values[index] == INITIAL_EMPTY) {</span>
+<span class="fc" id="L145">        return index;</span>
+      }
+
+<span class="fc bfc" id="L148" title="All 2 branches covered.">      if (isEmptySlot(index)) {</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">        if (firstEmptyIndex == -1) {</span>
+<span class="fc" id="L150">          firstEmptyIndex = index;</span>
+        }
+      }
+
+<span class="fc" id="L154">      total++;</span>
+
+      // case that we've seen every slot
+<span class="fc bfc" id="L157" title="All 2 branches covered.">      if (total == values.length) {</span>
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">        if (firstEmptyIndex == -1) {</span>
+<span class="nc" id="L159">          return FULL_SET;</span>
+        } else {
+<span class="fc" id="L161">          return firstEmptyIndex;</span>
+        }
+      }
+
+<span class="fc" id="L165">      index = (index + 1) % values.length;</span>
+    }
+
+    // this means we found aLong
+<span class="nc" id="L169">    return index;</span>
+  }
+
+  private boolean isEmptySlot(int index) {
+<span class="fc bfc" id="L173" title="All 2 branches covered.">    return values[index] &lt; 0;</span>
+  }
+
+  private void validateArgument(Long aLong) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">    if (aLong &lt; 0) {</span>
+<span class="nc" id="L178">      throw new IllegalArgumentException(</span>
+        String.format(
+          &quot;only non-negative integers are allowed (tried to use %d)&quot;, aLong
+        )
+      );
+    }
+<span class="fc" id="L184">  }</span>
+
+  @Override
+  public int size() {
+<span class="fc" id="L188">    return size.get();</span>
+  }
+
+  @Override
+  public boolean isEmpty() {
+<span class="nc bnc" id="L193" title="All 2 branches missed.">    return size.get() == 0;</span>
+  }
+
+  @Override
+  public boolean contains(Object o) {
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">    if (!(o instanceof Long)) {</span>
+<span class="nc" id="L199">      throw new IllegalArgumentException(&quot;type of long required&quot;);</span>
+    }
+
+    int index;
+
+<span class="fc" id="L204">    lock.readLock().lock();</span>
+
+    try {
+<span class="fc" id="L207">      index = findLocationOf((Long) o);</span>
+
+<span class="pc bpc" id="L209" title="2 of 4 branches missed.">      return index != FULL_SET &amp;&amp; !isEmptySlot(index);</span>
+    } finally {
+<span class="pc" id="L211">      lock.readLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public Iterator&lt;Long&gt; iterator() {
+<span class="fc" id="L217">    final AtomicLong snapshotVersion = new AtomicLong(version.get());</span>
+<span class="fc" id="L218">    final long sizeSnapshot = size.get();</span>
+
+<span class="fc" id="L220">    return new Iterator&lt;Long&gt;() {</span>
+      // invariant: location &lt; values.length. This holds because we
+      // require that the set does not change while we iterator. location
+      // is only incremented in next() which checks the bound. Remove
+<span class="fc" id="L224">      private int location = -1;</span>
+<span class="fc" id="L225">      private int visited = 0;</span>
+<span class="fc" id="L226">      private boolean canRemove = false;</span>
+
+      @Override
+      public boolean hasNext() {
+<span class="fc" id="L230">        lock.readLock().lock();</span>
+
+        try {
+<span class="pc bpc" id="L233" title="1 of 2 branches missed.">          if (version.get() != snapshotVersion.get()) {</span>
+<span class="nc" id="L234">            throw new ConcurrentModificationException();</span>
+          }
+
+<span class="fc bfc" id="L237" title="All 2 branches covered.">          return visited &lt; sizeSnapshot;</span>
+        } finally {
+<span class="pc" id="L239">          lock.readLock().unlock();</span>
+        }
+      }
+
+      @Override
+      public Long next() {
+<span class="fc" id="L245">        lock.readLock().lock();</span>
+
+        try {
+<span class="pc bpc" id="L248" title="1 of 2 branches missed.">          if (version.get() != snapshotVersion.get()) {</span>
+<span class="nc" id="L249">            throw new ConcurrentModificationException();</span>
+          }
+
+<span class="pc bpc" id="L252" title="1 of 2 branches missed.">          if (location &gt;= values.length) {</span>
+<span class="nc" id="L253">            throw new NoSuchElementException();</span>
+          }
+
+          do {
+<span class="fc" id="L257">            location++;</span>
+
+<span class="pc bpc" id="L259" title="1 of 2 branches missed.">            if (location &gt;= values.length) {</span>
+<span class="nc" id="L260">              throw new NoSuchElementException();</span>
+            }
+<span class="fc bfc" id="L262" title="All 2 branches covered.">          } while (isEmptySlot(location));</span>
+
+<span class="fc" id="L264">          visited++;</span>
+<span class="fc" id="L265">          canRemove = true;</span>
+
+          //noinspection unchecked
+<span class="fc" id="L268">          return values[location];</span>
+        } finally {
+<span class="pc" id="L270">          lock.readLock().unlock();</span>
+        }
+      }
+
+      @Override
+      public void remove() {
+<span class="fc" id="L276">        lock.writeLock().lock();</span>
+
+        try {
+<span class="pc bpc" id="L279" title="1 of 2 branches missed.">          if (!canRemove) {</span>
+            // TODO : clean this up?
+<span class="nc" id="L281">            throw new IllegalStateException(</span>
+              &quot;repeated remove() calls or next() not called&quot;
+            );
+          }
+
+          // this works because we verify the set hasn't changed and
+          // then update the snapshotVersion to a new one
+<span class="pc bpc" id="L288" title="1 of 2 branches missed.">          if (version.get() != snapshotVersion.get()) {</span>
+<span class="nc" id="L289">            throw new ConcurrentModificationException();</span>
+          }
+
+<span class="fc" id="L292">          values[location] = REMOVED_EMPTY;</span>
+<span class="fc" id="L293">          size.decrementAndGet();</span>
+          // update the snapshotVersion and also set the valid snapshotVersion to check
+          // for changes against
+<span class="fc" id="L296">          snapshotVersion.set(version.incrementAndGet());</span>
+<span class="fc" id="L297">          canRemove = false;</span>
+        } finally {
+<span class="pc" id="L299">          lock.writeLock().unlock();</span>
+<span class="fc" id="L300">        }</span>
+<span class="fc" id="L301">      }</span>
+    };
+  }
+
+  @Override
+  public Object[] toArray() {
+<span class="nc" id="L307">    return toArray(new Object[size.get()]);</span>
+  }
+
+  @Override
+  public &lt;T&gt; T[] toArray(T[] a) {
+<span class="nc bnc" id="L312" title="All 2 branches missed.">    if (!a.getClass().getComponentType().isAssignableFrom(Long.class)) {</span>
+<span class="nc" id="L313">      throw new ArrayStoreException(&quot;array must be of type Long&quot;);</span>
+    }
+
+    T[] result;
+
+<span class="nc" id="L318">    lock.readLock().lock();</span>
+
+    try {
+<span class="nc bnc" id="L321" title="All 2 branches missed.">      if (a.length &gt;= size.get()) {</span>
+<span class="nc" id="L322">        result = a;</span>
+      } else {
+<span class="nc" id="L324">        result = (T[]) java.lang.reflect.Array</span>
+          .newInstance(a.getClass().getComponentType(), size.get());
+      }
+
+<span class="nc" id="L328">      int i = 0;</span>
+
+<span class="nc bnc" id="L330" title="All 2 branches missed.">      for (Object value : this) {</span>
+<span class="nc" id="L331">        result[i++] = (T) value;</span>
+<span class="nc" id="L332">      }</span>
+    } finally {
+<span class="nc" id="L334">      lock.readLock().unlock();</span>
+<span class="nc" id="L335">    }</span>
+
+<span class="nc" id="L337">    return result;</span>
+  }
+
+  @VisibleForTesting
+  boolean add(Integer anInteger) {
+<span class="nc" id="L342">    return add(anInteger.longValue());</span>
+  }
+
+  @Override
+  public boolean add(Long aLong) {
+<span class="fc" id="L347">    validateArgument(aLong);</span>
+
+<span class="fc" id="L349">    lock.writeLock().lock();</span>
+
+    try {
+<span class="fc" id="L352">      int maxUsedBuckets = (int) (MAX_LOAD_FACTOR * values.length);</span>
+      // resize if we are too full and we can add buckets
+<span class="pc bpc" id="L354" title="1 of 4 branches missed.">      if (size.get() &gt; maxUsedBuckets &amp;&amp; values.length &lt; maxCapacity) {</span>
+<span class="fc" id="L355">        resize();</span>
+      }
+
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">      if (internalAdd(aLong)) {</span>
+<span class="fc" id="L359">        version.incrementAndGet();</span>
+
+<span class="fc" id="L361">        return true;</span>
+      } else {
+<span class="nc" id="L363">        return false;</span>
+      }
+    } finally {
+<span class="pc" id="L366">      lock.writeLock().unlock();</span>
+    }
+  }
+
+  private boolean internalAdd(long value) {
+<span class="fc" id="L371">    int index = findLocationOf(value);</span>
+
+<span class="pc bpc" id="L373" title="1 of 2 branches missed.">    if (index == FULL_SET) {</span>
+<span class="nc" id="L374">      throw new IllegalStateException(</span>
+        String.format(
+          &quot;set is full with %d elements, cannot add more&quot;,
+          values.length
+        )
+      );
+    }
+
+<span class="pc bpc" id="L382" title="1 of 2 branches missed.">    if (isEmptySlot(index)) {</span>
+<span class="fc" id="L383">      values[index] = value;</span>
+<span class="fc" id="L384">      size.incrementAndGet();</span>
+
+<span class="fc" id="L386">      return true;</span>
+    } else {
+<span class="nc" id="L388">      return false;</span>
+    }
+  }
+
+  @Override
+  public boolean remove(Object o) {
+<span class="nc bnc" id="L394" title="All 2 branches missed.">    if (!(o instanceof Long)) {</span>
+<span class="nc" id="L395">      throw new IllegalArgumentException(&quot;type of long required&quot;);</span>
+    }
+
+<span class="nc" id="L398">    validateArgument((Long) o);</span>
+
+<span class="nc" id="L400">    lock.writeLock().lock();</span>
+
+    try {
+<span class="nc" id="L403">      int index = findLocationOf((Long) o);</span>
+
+<span class="nc bnc" id="L405" title="All 4 branches missed.">      if (index != FULL_SET &amp;&amp; !isEmptySlot(index)) {</span>
+<span class="nc" id="L406">        values[index] = REMOVED_EMPTY;</span>
+<span class="nc" id="L407">        version.incrementAndGet();</span>
+<span class="nc" id="L408">        size.decrementAndGet();</span>
+
+<span class="nc" id="L410">        return true;</span>
+      }
+
+<span class="nc" id="L413">      return false;</span>
+    } finally {
+<span class="nc" id="L415">      lock.writeLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public boolean containsAll(Collection&lt;?&gt; c) {
+    // grab the lock since returning true here means that the set contains
+    // all the elements at one moment in time
+<span class="nc" id="L423">    lock.readLock().lock();</span>
+
+    try {
+<span class="nc bnc" id="L426" title="All 2 branches missed.">      for (Object element : c) {</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">        if (!contains(element)) {</span>
+<span class="nc" id="L428">          return false;</span>
+        }
+<span class="nc" id="L430">      }</span>
+
+<span class="nc" id="L432">      return true;</span>
+    } finally {
+<span class="nc" id="L434">      lock.readLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public boolean addAll(Collection&lt;? extends Long&gt; c) {
+<span class="nc" id="L440">    boolean changed = false;</span>
+
+    //rely on add() holding the writeLock
+<span class="nc bnc" id="L443" title="All 2 branches missed.">    for (Long element : c) {</span>
+<span class="nc bnc" id="L444" title="All 2 branches missed.">      if (add(element)) {</span>
+<span class="nc" id="L445">        changed = true;</span>
+      }
+<span class="nc" id="L447">    }</span>
+
+<span class="nc" id="L449">    return changed;</span>
+  }
+
+  @Override
+  public boolean retainAll(Collection&lt;?&gt; c) {
+<span class="nc" id="L454">    boolean changed = false;</span>
+
+    // semantics of this method are that only elements in the collection
+    // are present after completion; hold the lock so that this holds
+    // for at least one moment
+
+<span class="nc" id="L460">    lock.writeLock().lock();</span>
+
+    try {
+<span class="nc" id="L463">      Iterator&lt;Long&gt; iterator = this.iterator();</span>
+
+<span class="nc bnc" id="L465" title="All 2 branches missed.">      while (iterator.hasNext()) {</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">        if (!c.contains(iterator.next())) {</span>
+          // remove() here will update the version
+<span class="nc" id="L468">          iterator.remove();</span>
+<span class="nc" id="L469">          size.decrementAndGet();</span>
+<span class="nc" id="L470">          changed = true;</span>
+        }
+      }
+    } finally {
+<span class="nc" id="L474">      lock.writeLock().unlock();</span>
+<span class="nc" id="L475">    }</span>
+
+<span class="nc" id="L477">    return changed;</span>
+  }
+
+  @Override
+  public boolean removeAll(Collection&lt;?&gt; c) {
+<span class="nc" id="L482">    boolean changed = false;</span>
+    // simpler to reason about if we lock the set here
+<span class="nc" id="L484">    lock.writeLock().lock();</span>
+
+    try {
+<span class="nc bnc" id="L487" title="All 2 branches missed.">      if (size() &gt; c.size()) {</span>
+<span class="nc bnc" id="L488" title="All 2 branches missed.">        for (Iterator&lt;?&gt; i = c.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L489">          changed |= remove(i.next());</span>
+        }
+      } else {
+<span class="nc bnc" id="L492" title="All 2 branches missed.">        for (Iterator&lt;?&gt; i = iterator(); i.hasNext(); ) {</span>
+<span class="nc bnc" id="L493" title="All 2 branches missed.">          if (c.contains(i.next())) {</span>
+<span class="nc" id="L494">            i.remove();</span>
+<span class="nc" id="L495">            changed = true;</span>
+          }
+        }
+      }
+
+<span class="nc" id="L500">      return changed;</span>
+    } finally {
+<span class="nc" id="L502">      lock.writeLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public void clear() {
+<span class="nc" id="L508">    lock.writeLock().lock();</span>
+
+    try {
+<span class="nc" id="L511">      internalClear();</span>
+<span class="nc" id="L512">      version.incrementAndGet();</span>
+    } finally {
+<span class="nc" id="L514">      lock.writeLock().unlock();</span>
+<span class="nc" id="L515">    }</span>
+<span class="nc" id="L516">  }</span>
+
+  /**
+   * efficient deep-copy method
+   *
+   * @return deep copy of this set
+   */
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeSnapshot() {
+<span class="nc" id="L525">    lock.readLock().lock();</span>
+
+    try {
+      // create  new set
+<span class="nc" id="L529">      LongHashSet copy = new LongHashSet(values.length, maxCapacity, hashFunction);</span>
+
+      // set the size and copy the values array
+<span class="nc" id="L532">      copy.size.set(size.get());</span>
+<span class="nc" id="L533">      System.arraycopy(values, 0, copy.values, 0, values.length);</span>
+
+<span class="nc" id="L535">      return copy;</span>
+    } finally {
+<span class="nc" id="L537">      lock.readLock().unlock();</span>
+    }
+  }
+
+  @Override
+  public SnapshotableSet&lt;Long&gt; makeTransientSnapshot() {
+<span class="nc" id="L543">    return new SnapshotableSetImpl&lt;Long&gt;(</span>
+      Collections.&lt;Long&gt;synchronizedSet(new HashSet&lt;Long&gt;(this)),
+      new SnapshotableSetImplFactory&lt;Long&gt;(new HashSetFactory&lt;Long&gt;())
+    );
+  }
+
+  private void internalClear() {
+<span class="fc" id="L550">    size.set(0);</span>
+<span class="fc" id="L551">    Arrays.fill(values, INITIAL_EMPTY);</span>
+<span class="fc" id="L552">  }</span>
+
+  @Override
+  public synchronized boolean hasChanged() {
+<span class="nc" id="L556">    long pastVersion = lastCheckedVersion;</span>
+<span class="nc" id="L557">    lastCheckedVersion = version.get();</span>
+
+<span class="nc bnc" id="L559" title="All 2 branches missed.">    return (lastCheckedVersion != pastVersion);</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L564" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L565">      return true;</span>
+    }
+<span class="nc bnc" id="L567" title="All 2 branches missed.">    if (!(o instanceof Set)) {</span>
+<span class="nc" id="L568">      return false;</span>
+    }
+<span class="nc" id="L570">    @SuppressWarnings(&quot;unchecked&quot;) Collection&lt;Long&gt; c = (Collection&lt;Long&gt;) o;</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">    if (c.size() != size()) {</span>
+<span class="nc" id="L572">      return false;</span>
+    }
+    try {
+<span class="nc" id="L575">      return containsAll(c);</span>
+<span class="nc" id="L576">    } catch (ClassCastException unused) {</span>
+<span class="nc" id="L577">      return false;</span>
+<span class="nc" id="L578">    } catch (NullPointerException unused) {</span>
+<span class="nc" id="L579">      return false;</span>
+    }
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L585">    int h = 0;</span>
+<span class="nc" id="L586">    Iterator&lt;Long&gt; i = iterator();</span>
+
+<span class="nc bnc" id="L588" title="All 2 branches missed.">    while (i.hasNext()) {</span>
+<span class="nc" id="L589">      Long value = i.next();</span>
+
+<span class="nc bnc" id="L591" title="All 2 branches missed.">      if (value != null) {</span>
+<span class="nc" id="L592">        h += value.hashCode();</span>
+      }
+<span class="nc" id="L594">    }</span>
+
+<span class="nc" id="L596">    return h;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L601">    StringBuilder sb = new StringBuilder((int) (size.get() * 8));</span>
+<span class="nc" id="L602">    Set&lt;Long&gt; copy = makeSnapshot();</span>
+<span class="nc" id="L603">    boolean first = true;</span>
+
+<span class="nc" id="L605">    sb.append(&quot;{&quot;);</span>
+
+<span class="nc bnc" id="L607" title="All 2 branches missed.">    for (Long value : copy) {</span>
+<span class="nc bnc" id="L608" title="All 2 branches missed.">      if (!first) {</span>
+<span class="nc" id="L609">        sb.append(&quot;, &quot;);</span>
+      }
+
+<span class="nc" id="L612">      sb.append(value.longValue());</span>
+<span class="nc" id="L613">      first = false;</span>
+<span class="nc" id="L614">    }</span>
+
+<span class="nc" id="L616">    sb.append(&quot;}&quot;);</span>
+
+<span class="nc" id="L618">    return sb.toString();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PriorityQueueHeap.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">collections</a> &gt; <a href="index.html" class="el_package">com.facebook.collections</a> &gt; <span class="el_source">PriorityQueueHeap.java</span></div><h1>PriorityQueueHeap.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.collections;
+
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.PriorityQueue;
+
+/**
+ * reference implementation of a SimpleHeap that delegates to a PriorityQueue.  This is 
+ * basic delegation
+ * 
+ * NOTE: NOT thread-safe due to shrink operation
+ * @param &lt;T&gt;
+ */
+public class PriorityQueueHeap&lt;T&gt; implements SimpleHeap&lt;T&gt; {
+  // make this volatile in case someone wants to try for some sort of optimistic concurrency
+  private volatile PriorityQueue&lt;T&gt; priorityQueue;
+
+<span class="nc" id="L33">  public PriorityQueueHeap(PriorityQueue&lt;T&gt; priorityQueue) {</span>
+<span class="nc" id="L34">    this.priorityQueue = priorityQueue;</span>
+<span class="nc" id="L35">  }</span>
+
+  @Override
+  public T peek() {
+<span class="nc" id="L39">    return priorityQueue.peek();</span>
+  }
+
+  @Override
+  public T poll() {
+<span class="nc" id="L44">    return priorityQueue.poll();</span>
+  }
+
+  @Override
+  public boolean add(T item) {
+<span class="nc" id="L49">    return priorityQueue.add(item);</span>
+  }
+
+  @Override
+  public boolean addAll(Collection&lt;? extends T&gt; items) {
+<span class="nc" id="L54">    return priorityQueue.addAll(items);</span>
+  }
+
+  @Override
+  public int size() {
+<span class="nc" id="L59">    return priorityQueue.size();</span>
+  }
+
+  /**
+   * attempts to reclaim slots, but we can't know how many, so always return 0.  
+   * @return
+   */
+  @Override
+  public int shrink() {
+<span class="nc" id="L68">    PriorityQueue&lt;T&gt; newPriorityQueue = new PriorityQueue&lt;T&gt;(priorityQueue);</span>
+    
+<span class="nc" id="L70">    priorityQueue = newPriorityQueue;</span>
+    // unfortunately, we don't know the # of slots saved, so we still return 0
+    
+<span class="nc" id="L73">    return 0;</span>
+  }
+
+  @Override
+  public SimpleHeap&lt;T&gt; makeCopy() {
+    // deep copy
+<span class="nc" id="L79">    return new PriorityQueueHeap&lt;T&gt;(new PriorityQueue&lt;T&gt;(priorityQueue));</span>
+  }
+
+  @Override
+  public Iterator&lt;T&gt; iterator() {
+<span class="nc" id="L84">    return priorityQueue.iterator();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
