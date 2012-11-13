@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkLeaderElection.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.election</a> &gt; <span class="el_source">ZkLeaderElection.java</span></div><h1>ZkLeaderElection.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.election;
+
+import com.facebook.concurrency.ErrorLoggingRunnable;
+import com.facebook.concurrency.NamedThreadFactory;
+import com.facebook.zookeeper.Encodable;
+import com.facebook.zookeeper.ZkUtil;
+import com.facebook.zookeeper.ZooKeeperIface;
+import com.facebook.zookeeper.connection.ZkConnectionManager;
+import org.apache.log4j.Logger;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooDefs;
+
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * A ZooKeeper primitive for handling non-blocking leader elections.
+ *
+ * This implementation tries to make no assumptions about the users of this
+ * class and passes all error handling responsibilities to the callers.
+ * On any unexpected errors, this class will not try to recover from
+ * them. For example, if the candidate is unexpectedly removed from the
+ * election, ZkLeaderElection will signal the removal, but make no attempt
+ * to add them back into the election. It is up to the caller to decide whether
+ * or not to re-enter the election.
+ *
+ * Note: All public methods are guaranteed to be idempotent and repeated
+ * invocations will have no unintended effects. This might be a desired
+ * course of action following an exception thrown on an earlier invocation.
+ */
+public class ZkLeaderElection implements LeaderElection {
+<span class="fc" id="L51">  private static final Logger LOG = Logger.getLogger(ZkLeaderElection.class);</span>
+  
+  private final ZkConnectionManager zkConnectionManager;
+  private final PathFormat pathFormat;
+  private final Candidate candidate;
+<span class="fc" id="L56">  private final PredecessorMonitor predecessorMonitor = new PredecessorMonitor();</span>
+  private final LeaderElectionCallback leaderElectionCallback;
+  private final ExecutorService watchExecutor;
+
+  public ZkLeaderElection(
+    ZkConnectionManager zkConnectionManager,
+    String electionPath,
+    String baseCandidateName,
+    Encodable candidatePayload,
+    LeaderElectionCallback leaderElectionCallback,
+    ExecutorService watchExecutor
+<span class="fc" id="L67">  ) {</span>
+<span class="fc" id="L68">    this.zkConnectionManager = zkConnectionManager;</span>
+<span class="fc" id="L69">    this.pathFormat = new PathFormat(electionPath, baseCandidateName);</span>
+<span class="fc" id="L70">    this.candidate = new Candidate(candidatePayload);</span>
+<span class="fc" id="L71">    this.leaderElectionCallback = leaderElectionCallback;</span>
+<span class="fc" id="L72">    this.watchExecutor = watchExecutor;</span>
+<span class="fc" id="L73">  }</span>
+
+  public ZkLeaderElection(
+    ZkConnectionManager zkConnectionManager,
+    String electionPath,
+    String baseCandidateName,
+    Encodable candidatePayload,
+    LeaderElectionCallback leaderElectionCallback
+  ) {
+<span class="nc" id="L82">    this(</span>
+      zkConnectionManager,
+      electionPath,
+      baseCandidateName, 
+      candidatePayload,
+      leaderElectionCallback,
+      Executors.newSingleThreadExecutor(
+        new NamedThreadFactory(&quot;ZkLeaderElection-watch&quot;)
+      )
+    );
+<span class="nc" id="L92">  }</span>
+
+  @Override
+  public void enter() throws InterruptedException, KeeperException {
+<span class="fc" id="L96">    candidate.enter();</span>
+<span class="fc" id="L97">  }</span>
+
+  @Override
+  public void withdraw() throws InterruptedException, KeeperException {
+<span class="fc" id="L101">    candidate.withdraw();</span>
+<span class="fc" id="L102">  }</span>
+
+  @Override
+  public void cycle() throws InterruptedException, KeeperException {
+<span class="fc" id="L106">    candidate.cycle();</span>
+<span class="fc" id="L107">  }</span>
+
+  @Override
+  public String getLeader() throws InterruptedException, KeeperException { // TODO: add some way to watch for leader addition
+<span class="fc" id="L111">    ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="fc" id="L112">    List&lt;String&gt; candidateNames = getCandidateNames(zk);</span>
+<span class="fc" id="L113">    long leaderSeqNo = Long.MAX_VALUE;</span>
+<span class="fc" id="L114">    String leader = null;</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">    for (String candidateName : candidateNames) {</span>
+<span class="fc" id="L116">      long candidateSeqNo = pathFormat.extractSeqNo(candidateName);</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">      if (candidateSeqNo &lt; leaderSeqNo) {</span>
+<span class="fc" id="L118">        leader = candidateName;</span>
+<span class="fc" id="L119">        leaderSeqNo = candidateSeqNo;</span>
+      }
+<span class="fc" id="L121">    }</span>
+<span class="fc" id="L122">    return leader;</span>
+  }
+
+  /**
+   * Sets a watch on a node only if it exists. If the node does
+   * not exist, no watch will be set.
+   * @param zk
+   * @param path
+   * @param watcher
+   * @return true if a watch was set (node exists), false otherwise
+   * @throws InterruptedException
+   * @throws KeeperException
+   */
+  private boolean setWatchIfNodeExists(
+    ZooKeeperIface zk, String path, Watcher watcher
+  ) throws InterruptedException, KeeperException {
+    try {
+      // Use getData instead of exists to set watch to guarantee that watch
+      // will ONLY be set on an existing node. Otherwise you may get
+      // watches set on non-existent nodes that will never be created
+      // and thus will never fire, which is essentially a memory leak.
+<span class="fc" id="L143">      zk.getData(path, watcher, null);</span>
+<span class="fc" id="L144">      return true;</span>
+<span class="nc" id="L145">    } catch (KeeperException.NoNodeException e) {</span>
+<span class="nc" id="L146">      return false;</span>
+    }
+  }
+
+  private String findCandidateName(long sessionId, List&lt;String&gt; candidateNames) {
+<span class="fc bfc" id="L151" title="All 2 branches covered.">    for (String candidateName : candidateNames) {</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">      if (sessionId == pathFormat.extractSessionId(candidateName)) {</span>
+<span class="fc" id="L153">        return candidateName;</span>
+      }
+<span class="fc" id="L155">    }</span>
+<span class="fc" id="L156">    return null;</span>
+  }
+
+  private List&lt;String&gt; getCandidateNames(ZooKeeperIface zk)
+    throws InterruptedException, KeeperException {
+<span class="fc" id="L161">    List&lt;String&gt; children = zk.getChildren(pathFormat.getElectionPath(), false);</span>
+<span class="fc" id="L162">    return pathFormat.filterByBaseName(children);</span>
+  }
+
+
+  // Helper classes
+
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">  private class PathFormat {</span>
+    private static final char NAME_DELIM ='-';
+    private final String electionPath;
+    private final String baseCandidateName;
+
+<span class="fc" id="L173">    private PathFormat(String electionPath, String baseCandidateName) {</span>
+<span class="fc" id="L174">      this.electionPath = electionPath;</span>
+<span class="fc" id="L175">      this.baseCandidateName = baseCandidateName;</span>
+<span class="fc" id="L176">    }</span>
+
+    public String getElectionPath() {
+<span class="fc" id="L179">      return electionPath;</span>
+    }
+
+    public String buildCandidatePrefix(long sessionId) {
+<span class="fc" id="L183">      return baseCandidateName + NAME_DELIM + sessionId + NAME_DELIM;</span>
+    }
+
+    public String buildPath(String candidateName) {
+<span class="fc" id="L187">      return electionPath + &quot;/&quot; + candidateName;</span>
+    }
+
+    public String buildCandidatePathPrefix(long sessionId) {
+<span class="fc" id="L191">      return buildPath(buildCandidatePrefix(sessionId));</span>
+    }
+
+    public long extractSessionId(String candidateName) {
+<span class="fc" id="L195">      int startDelimIdx = candidateName.indexOf(NAME_DELIM);</span>
+<span class="pc bpc" id="L196" title="2 of 4 branches missed.">      assert(startDelimIdx != -1);</span>
+<span class="fc" id="L197">      int endDelimIdx = candidateName.lastIndexOf(NAME_DELIM);</span>
+<span class="pc bpc" id="L198" title="2 of 4 branches missed.">      assert(endDelimIdx != -1);</span>
+<span class="pc bpc" id="L199" title="2 of 4 branches missed.">      assert(startDelimIdx != endDelimIdx);</span>
+<span class="fc" id="L200">      String sessionString =</span>
+        candidateName.substring(startDelimIdx+1, endDelimIdx);
+<span class="fc" id="L202">      return Long.parseLong(sessionString);</span>
+    }
+
+    public long extractSeqNo(String candidateName) {
+<span class="fc" id="L206">      int delimIdx = candidateName.lastIndexOf(NAME_DELIM);</span>
+<span class="pc bpc" id="L207" title="2 of 4 branches missed.">      assert(delimIdx != -1);</span>
+<span class="fc" id="L208">      String seqString = candidateName.substring(delimIdx+1);</span>
+<span class="fc" id="L209">      return Long.parseLong(seqString);</span>
+    }
+
+    public List&lt;String&gt; filterByBaseName(List&lt;String&gt; nodes) {
+<span class="fc" id="L213">      return ZkUtil.filterByPrefix(nodes, baseCandidateName + NAME_DELIM);</span>
+    }
+  }
+
+  private class Candidate {
+    private final Encodable candidatePayload;
+<span class="fc" id="L219">    private volatile CandidateWatcher currentCandidateWatcher = null;</span>
+
+<span class="fc" id="L221">    private Candidate(Encodable candidatePayload) {</span>
+<span class="fc" id="L222">      this.candidatePayload = candidatePayload;</span>
+<span class="fc" id="L223">    }</span>
+
+    public synchronized void enter()
+      throws InterruptedException, KeeperException {
+<span class="fc" id="L227">      ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="fc" id="L228">      internalEnter(zk);</span>
+<span class="fc" id="L229">    }</span>
+
+    private void internalEnter(ZooKeeperIface zk)
+      throws InterruptedException, KeeperException {
+<span class="fc" id="L233">      String candidatePath = createCandidateNodeSafe(zk);</span>
+<span class="fc bfc" id="L234" title="All 4 branches covered.">      if (currentCandidateWatcher == null ||</span>
+        !currentCandidateWatcher.appliesTo(candidatePath)) {
+<span class="fc" id="L236">        currentCandidateWatcher = new CandidateWatcher(candidatePath);</span>
+      }
+
+<span class="pc bpc" id="L239" title="1 of 2 branches missed.">      if (!setWatchIfNodeExists(zk, candidatePath, currentCandidateWatcher)) {</span>
+        // Candidate must have already been removed before we could set watch      
+<span class="nc" id="L241">        leaderElectionCallback.removed();</span>
+<span class="nc" id="L242">        return;</span>
+      }
+<span class="fc" id="L244">      predecessorMonitor.monitor(zk);</span>
+      
+<span class="fc" id="L246">      LOG.info(&quot;entering election for path &quot; + candidatePath);</span>
+<span class="fc" id="L247">    }</span>
+
+    public synchronized void withdraw()
+      throws InterruptedException, KeeperException {
+<span class="fc" id="L251">      ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="fc" id="L252">      internalWithdraw(zk);</span>
+<span class="fc" id="L253">    }</span>
+
+    private void internalWithdraw(ZooKeeperIface zk)
+      throws InterruptedException, KeeperException {
+<span class="fc bfc" id="L257" title="All 2 branches covered.">      if (currentCandidateWatcher != null) {</span>
+        // Suppress the callback that will be triggered by delete
+        // OK if something else deletes the node first
+<span class="fc" id="L260">        currentCandidateWatcher.ignoreOneDelete();</span>
+      }
+<span class="fc" id="L262">      List&lt;String&gt; candidateNames = getCandidateNames(zk);</span>
+<span class="fc" id="L263">      String candidateName = findCandidateName(zk.getSessionId(), candidateNames);</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">      if (candidateName != null) {</span>
+        try {
+<span class="fc" id="L266">          String path = pathFormat.buildPath(candidateName);</span>
+<span class="fc" id="L267">          zk.delete(path, -1);</span>
+<span class="fc" id="L268">          LOG.info(&quot;withdrawing for path &quot; + path);</span>
+<span class="nc" id="L269">        } catch (KeeperException.NoNodeException e) {</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">          if (currentCandidateWatcher != null) {</span>
+            // Ignore if the candidate was already deleted
+<span class="nc" id="L272">            currentCandidateWatcher.unsetIgnoreOneDelete();</span>
+          }
+<span class="fc" id="L274">        }</span>
+      }
+<span class="fc" id="L276">    }</span>
+
+    public synchronized void cycle()
+      throws InterruptedException, KeeperException {
+<span class="fc" id="L280">      ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="fc" id="L281">      internalWithdraw(zk);</span>
+<span class="fc" id="L282">      internalEnter(zk);</span>
+<span class="fc" id="L283">    }</span>
+
+    // NOTE: this entire method needs to be synchronized, and is currently
+    // protected by the synchronization of enter().
+    private String createCandidateNodeSafe(ZooKeeperIface zk)
+      throws InterruptedException, KeeperException {
+      // Check if the candidate has already entered the election
+<span class="fc" id="L290">      List&lt;String&gt; candidateNames = getCandidateNames(zk);</span>
+<span class="fc" id="L291">      String candidateName = findCandidateName(zk.getSessionId(), candidateNames);</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">      if (candidateName != null) {</span>
+        // Candidate already exists so just return its path
+<span class="fc" id="L294">        return pathFormat.buildPath(candidateName);</span>
+      }
+      // Add the candidate and return its new path
+<span class="fc" id="L297">      return zk.create(</span>
+        pathFormat.buildCandidatePathPrefix(zk.getSessionId()),
+        candidatePayload.encode(),
+        ZooDefs.Ids.OPEN_ACL_UNSAFE,
+        CreateMode.EPHEMERAL_SEQUENTIAL
+      );
+    }
+
+    private class CandidateWatcher implements Watcher {
+      private final String candidatePath;
+<span class="fc" id="L307">      private volatile boolean ignoreOneDelete = false;</span>
+
+<span class="fc" id="L309">      private CandidateWatcher(String candidatePath) {</span>
+<span class="fc" id="L310">        this.candidatePath = candidatePath;</span>
+<span class="fc" id="L311">      }</span>
+
+      public boolean appliesTo(String path) {
+<span class="fc" id="L314">        return candidatePath.equals(path);</span>
+      }
+
+      public void ignoreOneDelete() {
+<span class="fc" id="L318">        ignoreOneDelete = true;</span>
+<span class="fc" id="L319">      }</span>
+
+      public void unsetIgnoreOneDelete() {
+<span class="nc" id="L322">        ignoreOneDelete = false;</span>
+<span class="nc" id="L323">      }</span>
+
+      @Override
+      public void process(final WatchedEvent event) {
+<span class="fc" id="L327">        watchExecutor.execute(new ErrorLoggingRunnable(new Runnable() {</span>
+          @Override
+          public void run() {
+<span class="pc bpc" id="L330" title="1 of 3 branches missed.">            switch (event.getState()) {</span>
+              case SyncConnected:
+<span class="fc" id="L332">                processNodeEvent(event.getType());</span>
+<span class="fc" id="L333">                break;</span>
+              case Expired:
+                // All public methods guaranteed to fail on session expiration
+                // and candidate will be removed
+<span class="fc" id="L337">                leaderElectionCallback.removed();</span>
+                break;
+            }
+<span class="fc" id="L340">          }</span>
+        }));
+<span class="fc" id="L342">      }</span>
+
+      private void processNodeEvent(Event.EventType eventType) {
+<span class="pc bpc" id="L345" title="2 of 3 branches missed.">        switch (eventType) {</span>
+          case NodeDeleted:
+            // No locking since process() should be single-threaded
+<span class="fc bfc" id="L348" title="All 2 branches covered.">            if (!ignoreOneDelete) {</span>
+<span class="fc" id="L349">              leaderElectionCallback.removed();</span>
+            }
+<span class="fc" id="L351">            ignoreOneDelete = false;</span>
+<span class="fc" id="L352">            break;</span>
+
+          case NodeChildrenChanged:
+          case NodeCreated:
+          case NodeDataChanged:
+            // Some irrelevant node event triggered the watch, need to re-set it
+            try {
+<span class="nc" id="L359">              ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">              if (!setWatchIfNodeExists(zk, candidatePath, this)) {</span>
+<span class="nc" id="L361">                leaderElectionCallback.removed();</span>
+              }
+<span class="nc" id="L363">            } catch (Exception e) {</span>
+<span class="nc" id="L364">              leaderElectionCallback.error(e);</span>
+<span class="nc" id="L365">            }</span>
+            break;
+        }
+<span class="fc" id="L368">      }</span>
+    }
+  }
+
+<span class="pc bpc" id="L372" title="1 of 2 branches missed.">  private class PredecessorMonitor {</span>
+<span class="fc" id="L373">    private final PredecessorWatcher predecessorWatcher =</span>
+      new PredecessorWatcher();
+
+    public void monitor(ZooKeeperIface zk)
+      throws InterruptedException, KeeperException {
+      // This will eventually terminate because we only loop if a predecessor
+      // is deleted before a watch can be set and there is a finite number of
+      // predecessors for the current candidate.
+      while (true) {
+        // Refresh the list of candidates to include the current candidate.
+        // We need to do this to solidify the relative ordering of candidates
+        // with our current one.
+<span class="fc" id="L385">        List&lt;String&gt; candidateNames = getCandidateNames(zk);</span>
+<span class="pc bpc" id="L386" title="1 of 2 branches missed.">        if (findCandidateName(zk.getSessionId(), candidateNames) == null) {</span>
+          // Candidate must have been removed from the election
+          // Ignore this case and let the candidate signal the deletion
+<span class="nc" id="L389">          break;</span>
+        }
+<span class="fc" id="L391">        String predecessor =</span>
+          findPrecedingCandidateName(zk.getSessionId(), candidateNames);
+<span class="fc bfc" id="L393" title="All 2 branches covered.">        if (predecessor == null) {</span>
+          // No predecessor means that we are the leader
+<span class="fc" id="L395">          leaderElectionCallback.elected();</span>
+<span class="fc" id="L396">          break;</span>
+        }
+<span class="fc" id="L398">        String predecessorPath = pathFormat.buildPath(predecessor);</span>
+<span class="pc bpc" id="L399" title="1 of 2 branches missed.">        if (setWatchIfNodeExists(zk, predecessorPath, predecessorWatcher)) {</span>
+          // Done if we successfully set watch on our predecessor
+<span class="fc" id="L401">          break;</span>
+        }
+        // Need to repeat if the predecessor was deleted before watch was set
+<span class="nc" id="L404">      }</span>
+<span class="fc" id="L405">    }</span>
+
+    /**
+     * Finds the name of the candidate directly preceding the one associated
+     * with the session id. Returns null if it is the current leader.
+     * Precondition: candidate associated with session id must be in the list of
+     * candidate names.
+     * @param sessionId
+     * @param candidateNames
+     * @return Name of the closest preceding candidate, or null if the candidate
+     * associated with the session id is the leader
+     */
+    private String findPrecedingCandidateName(
+      long sessionId, List&lt;String&gt; candidateNames
+    ) {
+<span class="fc" id="L420">      String thisCandidateName = findCandidateName(sessionId, candidateNames);</span>
+<span class="pc bpc" id="L421" title="2 of 4 branches missed.">      assert(thisCandidateName != null); // This candidate must exist in list</span>
+<span class="fc" id="L422">      long thisSeqNo = pathFormat.extractSeqNo(thisCandidateName);</span>
+<span class="fc" id="L423">      long closestPrecedingSeqNo = -1;</span>
+<span class="fc" id="L424">      String closestPrecedingCandidateName = null;</span>
+<span class="fc bfc" id="L425" title="All 2 branches covered.">      for (String candidateName : candidateNames) {</span>
+<span class="fc" id="L426">        long candidateSeqNo = pathFormat.extractSeqNo(candidateName);</span>
+<span class="pc bpc" id="L427" title="1 of 4 branches missed.">        if (candidateSeqNo &lt; thisSeqNo &amp;&amp; candidateSeqNo &gt; closestPrecedingSeqNo) {</span>
+<span class="fc" id="L428">          closestPrecedingSeqNo = candidateSeqNo;</span>
+<span class="fc" id="L429">          closestPrecedingCandidateName = candidateName;</span>
+        }
+<span class="fc" id="L431">      }</span>
+<span class="fc" id="L432">      return closestPrecedingCandidateName;</span>
+    }
+
+<span class="fc" id="L435">    private class PredecessorWatcher implements Watcher {</span>
+      @Override
+      public void process(final WatchedEvent event) {
+<span class="fc" id="L438">        watchExecutor.execute(new ErrorLoggingRunnable(new Runnable() {</span>
+          @Override
+          public void run() {
+<span class="pc bpc" id="L441" title="1 of 2 branches missed.">            if (event.getType() != Event.EventType.None) {</span>
+              // Check for changes in predecessor and re-set watch if necessary.
+              try {
+<span class="fc" id="L444">                ZooKeeperIface zk = zkConnectionManager.getClient();</span>
+<span class="fc" id="L445">                monitor(zk);</span>
+<span class="nc" id="L446">              } catch (Exception e) {</span>
+<span class="nc" id="L447">                leaderElectionCallback.error(e);</span>
+<span class="fc" id="L448">              }</span>
+            }
+<span class="fc" id="L450">          }</span>
+        }));
+<span class="fc" id="L452">      }</span>
+    }
+
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

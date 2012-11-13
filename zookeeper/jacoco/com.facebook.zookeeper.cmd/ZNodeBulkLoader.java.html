@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZNodeBulkLoader.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.cmd</a> &gt; <span class="el_source">ZNodeBulkLoader.java</span></div><h1>ZNodeBulkLoader.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.cmd;
+
+import com.facebook.util.StreamImporter;
+import com.facebook.zookeeper.path.ZkGenericPath;
+import com.facebook.zookeeper.convenience.ZkQuickConnectionManager;
+import com.facebook.zookeeper.convenience.ZkScript;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.Options;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Iterator;
+import java.util.List;
+
+public class ZNodeBulkLoader extends ZkScript {
+<span class="nc" id="L36">  private volatile boolean verbose = false;</span>
+
+  public ZNodeBulkLoader(ZkQuickConnectionManager zkQuickConnectionManager) {
+<span class="nc" id="L39">    super(zkQuickConnectionManager);</span>
+<span class="nc" id="L40">  }</span>
+
+  public ZNodeBulkLoader() {
+<span class="nc" id="L43">    this(new ZkQuickConnectionManager());</span>
+<span class="nc" id="L44">  }</span>
+
+  public void setVerbose(boolean verbose) {
+<span class="nc" id="L47">    this.verbose = verbose;</span>
+<span class="nc" id="L48">  }</span>
+
+  public void load(File template)
+    throws InterruptedException, IOException, KeeperException {
+<span class="nc" id="L52">    InputStream in = new FileInputStream(template);</span>
+    try {
+<span class="nc" id="L54">      load(in);</span>
+    } finally {
+<span class="nc" id="L56">      in.close();</span>
+<span class="nc" id="L57">    }</span>
+<span class="nc" id="L58">  }</span>
+
+  public void load(InputStream in)
+    throws InterruptedException, IOException, KeeperException {
+<span class="nc" id="L62">    load(StreamImporter.importLines(in));</span>
+<span class="nc" id="L63">  }</span>
+
+  public void load(List&lt;String&gt; pathStrs)
+    throws InterruptedException, KeeperException {
+<span class="nc bnc" id="L67" title="All 2 branches missed.">    for (String pathStr : pathStrs) {</span>
+<span class="nc" id="L68">      createEntirePath(pathStr);</span>
+<span class="nc" id="L69">    }</span>
+<span class="nc" id="L70">  }</span>
+
+  private void createEntirePath(String pathStr)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L74">    ZkGenericPath path = ZkGenericPath.parse(&quot;/&quot;, pathStr);</span>
+<span class="nc" id="L75">    Iterator&lt;ZkGenericPath&gt; lineageIter = path.lineageIterator();</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    while (lineageIter.hasNext()) {</span>
+<span class="nc" id="L77">      String currentPathStr = lineageIter.next().toString();</span>
+      try {
+<span class="nc" id="L79">        getZk().create(</span>
+          currentPathStr,
+          null,
+          ZooDefs.Ids.OPEN_ACL_UNSAFE,
+          CreateMode.PERSISTENT
+        );
+<span class="nc" id="L85">      } catch (KeeperException.NodeExistsException e) {</span>
+        // Ignore if it already exist
+<span class="nc" id="L87">      }</span>
+<span class="nc" id="L88">    }</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (verbose) {</span>
+<span class="nc" id="L90">      System.out.println(&quot;Created ZNode: &quot; + pathStr);</span>
+    }
+<span class="nc" id="L92">  }</span>
+
+  @Override
+  protected String getName() {
+<span class="nc" id="L96">    return ZNodeBulkLoader.class.getName();</span>
+  }
+
+  @Override
+  protected Options getSpecificOptions() {
+<span class="nc" id="L101">    Options options = new Options();</span>
+<span class="nc" id="L102">    options.addOption(</span>
+      &quot;f&quot;,
+      &quot;file-template&quot;,
+      true,
+      &quot;Path to file containing new-line delimited list of ZNodes to create &quot; +
+        &quot;(recursive). If this parameter is not specified, expects the values &quot; +
+        &quot;to be provided via standard input.&quot;
+    );
+<span class="nc" id="L110">    options.addOption(</span>
+      &quot;v&quot;,
+      &quot;verbose&quot;,
+      false,
+      &quot;Print verbose messages [Default: off]&quot;
+    );
+<span class="nc" id="L116">    return options;</span>
+  }
+
+  @Override
+  protected boolean verifySpecificOptions(CommandLine cmd) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (cmd.hasOption(&quot;file-template&quot;)) {</span>
+<span class="nc" id="L122">      File template = new File(cmd.getOptionValue(&quot;file-template&quot;));</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">      if (!template.exists()) {</span>
+<span class="nc" id="L124">        System.err.println(&quot;Error: invalid file-template path.\n&quot;);</span>
+<span class="nc" id="L125">        return false;</span>
+      }
+    }
+<span class="nc" id="L128">    return true;</span>
+  }
+
+  @Override
+  protected void runScript(CommandLine cmd) throws Exception {
+<span class="nc" id="L133">    setVerbose(cmd.hasOption(&quot;verbose&quot;));</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">    if (cmd.hasOption(&quot;file-template&quot;)) {</span>
+<span class="nc" id="L135">      File template = new File(cmd.getOptionValue(&quot;file-template&quot;));</span>
+<span class="nc" id="L136">      load(template);</span>
+<span class="nc" id="L137">    } else {</span>
+<span class="nc" id="L138">      load(System.in);</span>
+    }
+<span class="nc" id="L140">  }</span>
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L143">    ZkScript script = new ZNodeBulkLoader();</span>
+<span class="nc" id="L144">    script.runMain(args);</span>
+<span class="nc" id="L145">    System.out.println(&quot;DONE&quot;);</span>
+<span class="nc" id="L146">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkScript.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.convenience</a> &gt; <span class="el_source">ZkScript.java</span></div><h1>ZkScript.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.convenience;
+
+import com.facebook.zookeeper.ZooKeeperIface;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.GnuParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * This abstract base class provides a template-and-hook style for writing
+ * scripts interacting with ZooKeeper. Provided that subclasses implement
+ * the abstracted methods, this class will handle initiating/terminating the
+ * ZooKeeper connection as well as parsing relevant command line parameters.
+ * The script may be executed via the runMain(...) method.
+ */
+public abstract class ZkScript {
+  private final ZkQuickConnectionManager zkQuickConnectionManager;
+
+<span class="nc" id="L40">  protected ZkScript(ZkQuickConnectionManager zkQuickConnectionManager) {</span>
+<span class="nc" id="L41">    this.zkQuickConnectionManager = zkQuickConnectionManager;</span>
+<span class="nc" id="L42">  }</span>
+
+  public void connect(String server, int timeout)
+    throws IOException, InterruptedException, TimeoutException {
+<span class="nc" id="L46">    zkQuickConnectionManager.connect(server, timeout);</span>
+<span class="nc" id="L47">  }</span>
+
+  public void close() throws InterruptedException {
+<span class="nc" id="L50">    zkQuickConnectionManager.close();</span>
+<span class="nc" id="L51">  }</span>
+
+  protected ZooKeeperIface getZk() {
+<span class="nc" id="L54">    return zkQuickConnectionManager.getZk();</span>
+  }
+
+  /*
+   * Derived scripts must fill in the templated methods below:
+   */
+
+  /**
+   * @return Name of the derived class
+   */
+  protected abstract String getName();
+
+  /**
+   * @return Command line options specific to the derived script
+   */
+  protected abstract Options getSpecificOptions();
+
+  /**
+   * Verifies the integrity of the script specific command line parameters
+   * @param cmd
+   * @return true, if verified, false if there is an issue
+   */
+  protected abstract boolean verifySpecificOptions(CommandLine cmd);
+
+  /**
+   * Executes the script (assuming already connected to ZooKeeper)
+   * @param cmd
+   * @throws Exception
+   */
+  protected abstract void runScript(CommandLine cmd) throws Exception;
+
+  private Options getOptions() {
+<span class="nc" id="L86">    Options options = new Options();</span>
+<span class="nc" id="L87">    options.addOption(</span>
+      &quot;s&quot;,
+      &quot;server&quot;,
+      true,
+      &quot;Zookeeper server as host:port string&quot;
+    );
+<span class="nc" id="L93">    options.addOption(</span>
+      &quot;i&quot;,
+      &quot;tier&quot;,
+      true,
+      &quot;Zookeeper SMC tier name (alternative to server parameter)&quot;
+    );
+<span class="nc" id="L99">    options.addOption(</span>
+      &quot;t&quot;,
+      &quot;timeout&quot;,
+      true,
+      &quot;Session timeout in milliseconds [Default: 5000]&quot;
+    );
+<span class="nc" id="L105">    options.addOption(</span>
+      &quot;h&quot;,
+      &quot;help&quot;,
+      false,
+      &quot;Prints this message&quot;
+    );
+    // Incorporate the specific options from the derived script
+<span class="nc bnc" id="L112" title="All 2 branches missed.">    for (Option opt : (Collection&lt;Option&gt;) getSpecificOptions().getOptions()) {</span>
+<span class="nc" id="L113">      options.addOption(opt);</span>
+<span class="nc" id="L114">    }</span>
+<span class="nc" id="L115">    return options;</span>
+  }
+
+  private void printUsage() {
+<span class="nc" id="L119">    HelpFormatter formatter = new HelpFormatter();</span>
+<span class="nc" id="L120">    formatter.printHelp(getName(), getOptions());</span>
+<span class="nc" id="L121">    System.out.println(</span>
+      &quot;Note: You must specify either a specific ZooKeeper server (-s) or an &quot; +
+        &quot;SMC ZooKeeper tier (-i)&quot;
+    );
+<span class="nc" id="L125">  }</span>
+
+  /**
+   * Main method to launch any script that derives from this abstract class
+   * @param args
+   * @throws Exception
+   */
+  public void runMain(String[] args) throws Exception {
+<span class="nc" id="L133">    Options options = getOptions();</span>
+<span class="nc" id="L134">    CommandLineParser parser = new GnuParser();</span>
+<span class="nc" id="L135">    CommandLine cmd = parser.parse(options, args);</span>
+
+<span class="nc bnc" id="L137" title="All 2 branches missed.">    if (cmd.hasOption(&quot;help&quot;)) {</span>
+<span class="nc" id="L138">      printUsage();</span>
+<span class="nc" id="L139">      return;</span>
+    }
+
+    // Verify script specific options
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    if (!verifySpecificOptions(cmd)) {</span>
+<span class="nc" id="L144">      printUsage();</span>
+<span class="nc" id="L145">      return;</span>
+    }
+
+    // Get connection parameters
+    String servers;
+<span class="nc bnc" id="L150" title="All 2 branches missed.">    if (cmd.hasOption(&quot;server&quot;)) {</span>
+<span class="nc" id="L151">      servers = cmd.getOptionValue(&quot;server&quot;);</span>
+    } else {
+<span class="nc" id="L153">      System.err.println(</span>
+        &quot;You did not specify a ZooKeeper server or an SMC ZooKeeper tier!&quot;
+      );
+<span class="nc" id="L156">      printUsage();</span>
+<span class="nc" id="L157">      return;</span>
+    }
+<span class="nc" id="L159">    int timeout = Integer.parseInt(cmd.getOptionValue(&quot;timeout&quot;, &quot;5000&quot;));</span>
+
+    // Run the script
+<span class="nc" id="L162">    connect(servers, timeout);</span>
+    try {
+<span class="nc" id="L164">      runScript(cmd);</span>
+    } finally {
+<span class="nc" id="L166">      close();</span>
+<span class="nc" id="L167">    }</span>
+<span class="nc" id="L168">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

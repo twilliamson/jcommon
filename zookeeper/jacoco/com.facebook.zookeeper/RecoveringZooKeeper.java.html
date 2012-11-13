@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RecoveringZooKeeper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper</a> &gt; <span class="el_source">RecoveringZooKeeper.java</span></div><h1>RecoveringZooKeeper.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper;
+
+import org.apache.log4j.Logger;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.ZooKeeper.States;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+<span class="nc bnc" id="L29" title="All 2 branches missed.">public class RecoveringZooKeeper implements ZooKeeperIface {</span>
+<span class="nc" id="L30">  private static final Logger LOG = Logger.getLogger(RecoveringZooKeeper.class);</span>
+
+  private final ZooKeeperIface zk;
+  private final RetryCounterFactory retryCounterFactory;
+
+  public RecoveringZooKeeper(
+    ZooKeeperIface zk, int maxRetries, int retryIntervalMillis
+<span class="nc" id="L37">  ) {</span>
+<span class="nc" id="L38">    this.zk = zk;</span>
+<span class="nc" id="L39">    this.retryCounterFactory =</span>
+      new RetryCounterFactory(maxRetries, retryIntervalMillis);
+<span class="nc" id="L41">  }</span>
+
+  @Override
+  public long getSessionId() {
+<span class="nc" id="L45">    return zk.getSessionId();</span>
+  }
+
+  @Override
+  public void close() throws InterruptedException {
+<span class="nc" id="L50">    zk.close();</span>
+<span class="nc" id="L51">  }</span>
+
+  @Override
+  public String create(String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode)
+    throws KeeperException, InterruptedException {
+<span class="nc bnc" id="L56" title="All 4 branches missed.">    switch (createMode) {</span>
+      case EPHEMERAL:
+      case PERSISTENT:
+<span class="nc" id="L59">        return createNonSequential(path, data, acl, createMode);</span>
+
+      case EPHEMERAL_SEQUENTIAL:
+        // NOTE: this does not reliably support creating multiple ephemeral
+        // sequential nodes with the same prefix under the same path
+<span class="nc" id="L64">        return createEphemeralSequential(path, data, acl, createMode);</span>
+
+      case PERSISTENT_SEQUENTIAL:
+        // No recovery for persistent sequential b/c no way to verify
+        // insertion after disconnect w/o application help
+<span class="nc" id="L69">        return zk.create(path, data, acl, createMode);</span>
+
+      default:
+<span class="nc" id="L72">        throw new IllegalArgumentException(&quot;Unrecognized CreateMode: &quot; + createMode);</span>
+    }
+  }
+
+  @Override
+  public void delete(String path, int version)
+    throws InterruptedException, KeeperException {
+<span class="nc" id="L79">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L82">        zk.delete(path, version);</span>
+<span class="nc" id="L83">        return;</span>
+<span class="nc" id="L84">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L85" title="All 3 branches missed.">        switch (e.code()) {</span>
+          case NONODE:
+<span class="nc" id="L87">            return; // Delete was successful</span>
+
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L91">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L93">              LOG.error(&quot;ZooKeeper delete failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L95">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L100">            throw e;</span>
+        }
+      }
+<span class="nc" id="L103">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L104">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L105">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public Stat exists(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L112">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L115">        return zk.exists(path, watcher);</span>
+<span class="nc" id="L116">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L120">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L122">              LOG.error(&quot;ZooKeeper exists failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L124">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L129">            throw e;</span>
+        }
+      }
+<span class="nc" id="L132">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L133">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L134">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public Stat exists(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L141">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L144">        return zk.exists(path, watch);</span>
+<span class="nc" id="L145">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L149">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L151">              LOG.error(&quot;ZooKeeper exists failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L153">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L158">            throw e;</span>
+        }
+      }
+<span class="nc" id="L161">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L162">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L163">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public byte[] getData(String path, Watcher watcher, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L170">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L173">        return zk.getData(path, watcher, stat);</span>
+<span class="nc" id="L174">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L178">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L179" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L180">              LOG.error(&quot;ZooKeeper getData failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L182">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L187">            throw e;</span>
+        }
+      }
+<span class="nc" id="L190">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L191">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L192">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public byte[] getData(String path, boolean watch, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L199">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L202">        return zk.getData(path, watch, stat);</span>
+<span class="nc" id="L203">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L207">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L209">              LOG.error(&quot;ZooKeeper getData failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L211">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L216">            throw e;</span>
+        }
+      }
+<span class="nc" id="L219">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L220">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L221">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public Stat setData(String path, byte[] data, int version)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L228">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L231">        return zk.setData(path, data, version);</span>
+<span class="nc" id="L232">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L236">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L238">              LOG.error(&quot;ZooKeeper setData failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L240">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L245">            throw e;</span>
+        }
+      }
+<span class="nc" id="L248">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L249">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L250">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public List&lt;String&gt; getChildren(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L257">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L260">        return zk.getChildren(path, watcher);</span>
+<span class="nc" id="L261">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L265">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L267">              LOG.error(&quot;ZooKeeper getChildren failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L269">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L274">            throw e;</span>
+        }
+      }
+<span class="nc" id="L277">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L278">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L279">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public List&lt;String&gt; getChildren(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L286">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L289">        return zk.getChildren(path, watch);</span>
+<span class="nc" id="L290">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L294">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L296">              LOG.error(&quot;ZooKeeper getChildren failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L298">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L303">            throw e;</span>
+        }
+      }
+<span class="nc" id="L306">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L307">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L308">      retryCounter.useRetry();</span>
+    }
+  }
+
+  @Override
+  public States getState() {
+<span class="nc" id="L314">    return zk.getState();</span>
+  }
+
+  // ------------------------- Internal Helpers ------------------------ //
+
+  private String createNonSequential(String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L321">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+    while (true) {
+      try {
+<span class="nc" id="L324">        return zk.create(path, data, acl, createMode);</span>
+<span class="nc" id="L325">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L326" title="All 3 branches missed.">        switch (e.code()) {</span>
+          case NODEEXISTS:
+            // Non-sequential node was successfully created
+<span class="nc" id="L329">            return path;</span>
+
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L333">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L335">              LOG.error(&quot;ZooKeeper create failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L337">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L342">            throw e;</span>
+        }
+      }
+<span class="nc" id="L345">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L346">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L347">      retryCounter.useRetry();</span>
+    }
+  }
+
+  private String createEphemeralSequential(String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L353">    RetryCounter retryCounter = retryCounterFactory.create();</span>
+<span class="nc" id="L354">    boolean first = true;</span>
+    while (true) {
+      try {
+<span class="nc bnc" id="L357" title="All 2 branches missed.">        if (!first) {</span>
+          // Check if we succeeded on a previous attempt
+<span class="nc" id="L359">          String myNode = findMyEphemeralSequentialNode(path);</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">          if (myNode != null) {</span>
+<span class="nc" id="L361">            return myNode;</span>
+          }
+        }
+<span class="nc" id="L364">        first = false;</span>
+<span class="nc" id="L365">        return zk.create(path, data, acl, createMode);</span>
+<span class="nc" id="L366">      } catch (KeeperException e) {</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">        switch (e.code()) {</span>
+          case CONNECTIONLOSS:
+          case OPERATIONTIMEOUT:
+<span class="nc" id="L370">            LOG.warn(&quot;Possibly transient ZooKeeper exception: &quot; + e);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">            if (!retryCounter.shouldRetry()) {</span>
+<span class="nc" id="L372">              LOG.error(&quot;ZooKeeper create failed after &quot;</span>
+                + retryCounter.getMaxRetries() + &quot; retries&quot;);
+<span class="nc" id="L374">              throw e;</span>
+            }
+            break;
+
+          default:
+<span class="nc" id="L379">            throw e;</span>
+        }
+      }
+<span class="nc" id="L382">      LOG.info(&quot;Retrying ZooKeeper after sleeping...&quot;);</span>
+<span class="nc" id="L383">      retryCounter.sleepUntilNextRetry();</span>
+<span class="nc" id="L384">      retryCounter.useRetry();</span>
+    }
+  }
+
+  private String findMyEphemeralSequentialNode(String path)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L390">    int lastSlashIdx = path.lastIndexOf('/');</span>
+<span class="nc bnc" id="L391" title="All 4 branches missed.">    assert(lastSlashIdx != -1);</span>
+<span class="nc" id="L392">    String parent = path.substring(0, lastSlashIdx);</span>
+<span class="nc" id="L393">    String nodePrefix = path.substring(lastSlashIdx+1);</span>
+
+<span class="nc" id="L395">    List&lt;String&gt; nodes = zk.getChildren(parent, false);</span>
+<span class="nc" id="L396">    List&lt;String&gt; matching = ZkUtil.filterByPrefix(nodes, nodePrefix);</span>
+<span class="nc bnc" id="L397" title="All 2 branches missed.">    for (String node : matching) {</span>
+<span class="nc" id="L398">      String nodePath = parent + &quot;/&quot; + node;</span>
+<span class="nc" id="L399">      Stat stat = zk.exists(nodePath, false);</span>
+<span class="nc bnc" id="L400" title="All 4 branches missed.">      if (stat != null &amp;&amp; stat.getEphemeralOwner() == zk.getSessionId()) {</span>
+<span class="nc" id="L401">        return nodePath;</span>
+      }
+<span class="nc" id="L403">    }</span>
+<span class="nc" id="L404">    return null;</span>
+  }
+
+  private static class RetryCounterFactory {
+    private final int maxRetries;
+    private final int retryIntervalMillis;
+
+<span class="nc" id="L411">    private RetryCounterFactory(int maxRetries, int retryIntervalMillis) {</span>
+<span class="nc" id="L412">      this.maxRetries = maxRetries;</span>
+<span class="nc" id="L413">      this.retryIntervalMillis = retryIntervalMillis;</span>
+<span class="nc" id="L414">    }</span>
+
+    public RetryCounter create() {
+<span class="nc" id="L417">      return</span>
+        new RetryCounter(
+          maxRetries, retryIntervalMillis, TimeUnit.MILLISECONDS
+        );
+    }
+  }
+
+  private static class RetryCounter {
+    private final int maxRetries;
+    private int retriesRemaining;
+    private final int retryIntervalMillis;
+    private final TimeUnit timeUnit;
+
+    private RetryCounter(
+      int maxRetries, int retryIntervalMillis, TimeUnit timeUnit
+<span class="nc" id="L432">    ) {</span>
+<span class="nc" id="L433">      this.maxRetries = maxRetries;</span>
+<span class="nc" id="L434">      this.retriesRemaining = maxRetries;</span>
+<span class="nc" id="L435">      this.retryIntervalMillis = retryIntervalMillis;</span>
+<span class="nc" id="L436">      this.timeUnit = timeUnit;</span>
+<span class="nc" id="L437">    }</span>
+
+    public int getMaxRetries() {
+<span class="nc" id="L440">      return maxRetries;</span>
+    }
+
+    public void sleepUntilNextRetry() throws InterruptedException {
+<span class="nc" id="L444">      timeUnit.sleep(retryIntervalMillis);</span>
+<span class="nc" id="L445">    }</span>
+
+    public boolean shouldRetry() {
+<span class="nc bnc" id="L448" title="All 2 branches missed.">      return retriesRemaining &gt; 0;</span>
+    }
+
+    public void useRetry() {
+<span class="nc" id="L452">      retriesRemaining--;</span>
+<span class="nc" id="L453">    }</span>
+
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

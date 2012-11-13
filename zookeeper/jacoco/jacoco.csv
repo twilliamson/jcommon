@@ -1,0 +1,63 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+zookeeper libraries,com.facebook.zookeeper.connection,ZkConnectionManagerImpl.ConnectionRenewer.new Runnable() {...},55,0,2,0,9,0,3,0,2,0
+zookeeper libraries,com.facebook.zookeeper.connection,ZkConnectionManagerImpl.new Object() {...},26,0,0,0,1,0,1,0,1,0
+zookeeper libraries,com.facebook.zookeeper.connection,ZkConnectionManagerImpl.ConnectionWatcher,76,0,6,0,21,0,8,0,4,0
+zookeeper libraries,com.facebook.zookeeper.connection,ZkConnectionManagerImpl,178,0,20,0,45,0,19,0,9,0
+zookeeper libraries,com.facebook.zookeeper.connection,ZkConnectionManagerImpl.ConnectionRenewer,40,0,2,0,8,0,4,0,3,0
+zookeeper libraries,com.facebook.zookeeper,RecoveringZooKeeper.RetryCounter,39,0,2,0,12,0,6,0,5,0
+zookeeper libraries,com.facebook.zookeeper,BasicZooKeeperFactory,21,0,0,0,5,0,2,0,2,0
+zookeeper libraries,com.facebook.zookeeper,DefaultZooKeeperFactory,43,0,0,0,11,0,3,0,3,0
+zookeeper libraries,com.facebook.zookeeper,BasicZooKeeper,77,0,0,0,17,0,13,0,13,0
+zookeeper libraries,com.facebook.zookeeper,RecoveringZooKeeper.new Object() {...},65,0,0,0,2,0,1,0,1,0
+zookeeper libraries,com.facebook.zookeeper,ZkUtil,7,56,3,5,2,11,4,5,1,4
+zookeeper libraries,com.facebook.zookeeper,RecoveringZooKeeper.RetryCounterFactory,19,0,0,0,5,0,2,0,2,0
+zookeeper libraries,com.facebook.zookeeper,RecoveringZooKeeper,730,0,62,0,157,0,50,0,17,0
+zookeeper libraries,com.facebook.zookeeper,RecoveringZooKeeperFactory,24,0,0,0,6,0,2,0,2,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext,188,0,6,0,38,0,11,0,8,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.DisconnectedStateHandler,22,0,3,0,8,0,6,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication,138,0,14,0,30,0,16,0,9,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.SafeModeRepairStateHandler.new Runnable() {...},83,0,6,0,12,0,5,0,2,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.State,88,0,0,0,8,0,4,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.SafeModeRepairStateHandler,97,0,10,0,27,0,13,0,7,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.FunctionalStateHandler,32,0,4,0,10,0,7,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.PreStartStateHandler,9,0,0,0,4,0,4,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.ShutdownStateHandler,13,0,0,0,5,0,4,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.ConnectionWatcher.new Runnable() {...},30,0,0,0,8,0,2,0,2,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.ConnectedStateHandler.new Runnable() {...},83,0,6,0,12,0,5,0,2,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.SafeModeStateHandler,32,0,4,0,10,0,7,0,4,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.ConnectionWatcher,19,0,0,0,3,0,2,0,2,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.StateContext.ConnectedStateHandler,97,0,10,0,27,0,13,0,7,0
+zookeeper libraries,com.facebook.zookeeper.app,ZkApplication.new Object() {...},26,0,0,0,1,0,1,0,1,0
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.ZNode.ZNodeTreeIterator,12,78,0,14,5,21,1,10,1,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZkConnectionManager,32,39,3,3,9,13,4,4,2,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.WatchTriggerPolicy.WatchType,5,43,0,0,0,4,1,3,1,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZkConnectionManager.new Watcher() {...},8,15,1,1,2,3,1,2,0,2
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperFactory,18,32,2,2,7,10,4,3,2,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore,218,177,32,18,41,40,23,15,2,11
+zookeeper libraries,com.facebook.zookeeper.mock,MockWatcher,0,17,0,0,0,5,0,3,0,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.WatchTriggerPolicy,3,39,0,0,2,7,1,3,1,3
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.ZNode,95,464,20,48,17,102,19,41,3,23
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeper,50,157,6,4,8,40,9,13,5,12
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.ContextedWatcher.WatchContext,9,56,5,5,2,13,5,5,0,5
+zookeeper libraries,com.facebook.zookeeper.mock,MockZooKeeperDataStore.ContextedWatcher,12,69,6,6,3,18,6,8,0,8
+zookeeper libraries,com.facebook.zookeeper.convenience,ZkQuickConnection.new Watcher() {...},17,0,2,0,4,0,3,0,2,0
+zookeeper libraries,com.facebook.zookeeper.convenience,ZkScript,148,0,8,0,41,0,11,0,7,0
+zookeeper libraries,com.facebook.zookeeper.convenience,ZkQuickConnection,53,0,2,0,14,0,6,0,5,0
+zookeeper libraries,com.facebook.zookeeper.convenience,ZkQuickConnectionManager,39,0,4,0,11,0,7,0,5,0
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.PathFormat,18,121,9,9,0,21,9,9,0,9
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection,16,132,0,8,4,35,1,13,1,9
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.Candidate.CandidateWatcher,32,53,4,3,8,15,4,6,1,5
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.PredecessorMonitor,8,111,6,12,2,25,6,7,0,4
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.PredecessorMonitor.PredecessorWatcher,0,20,0,0,0,3,0,2,0,2
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.Candidate,12,162,3,11,5,36,2,12,0,7
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.Candidate.CandidateWatcher.new Runnable() {...},0,30,1,2,0,6,1,3,0,2
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.PredecessorMonitor.PredecessorWatcher.new Runnable() {...},8,28,1,1,2,6,1,2,0,2
+zookeeper libraries,com.facebook.zookeeper.election,ZkLeaderElection.new Object() {...},6,45,0,0,0,2,0,1,0,1
+zookeeper libraries,com.facebook.zookeeper.path,ZkPathCoreBuilder,160,0,18,0,28,0,17,0,8,0
+zookeeper libraries,com.facebook.zookeeper.path,ZkPathCore,170,0,20,0,42,0,20,0,10,0
+zookeeper libraries,com.facebook.zookeeper.path,ZkGenericPath,99,0,8,0,22,0,14,0,10,0
+zookeeper libraries,com.facebook.zookeeper.path,ZkGenericPath.LineageIterator,61,0,6,0,11,0,7,0,4,0
+zookeeper libraries,com.facebook.zookeeper.cmd,ZNodeDump,305,0,16,0,63,0,20,0,12,0
+zookeeper libraries,com.facebook.zookeeper.cmd,ZNodePruner,361,0,30,0,90,0,30,0,15,0
+zookeeper libraries,com.facebook.zookeeper.cmd,ZNodeBulkLoader,173,0,12,0,51,0,18,0,12,0
+zookeeper libraries,com.facebook.zookeeper.cmd,ZNodeSync,161,0,8,0,39,0,12,0,8,0

@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MockZooKeeper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.mock</a> &gt; <span class="el_source">MockZooKeeper.java</span></div><h1>MockZooKeeper.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.mock;
+
+
+import com.facebook.zookeeper.ZooKeeperIface;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.Watcher.Event.EventType;
+import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
+
+import java.util.List;
+
+public class MockZooKeeper implements ZooKeeperIface {
+  private final MockZooKeeperDataStore dataStore;
+  private final long sessionId;
+  private final Watcher defaultWatcher;
+<span class="fc" id="L36">  private ZooKeeper.States state = ZooKeeper.States.CONNECTING;</span>
+
+<span class="fc" id="L38">  public MockZooKeeper(Watcher watcher, MockZooKeeperDataStore dataStore) {</span>
+<span class="fc" id="L39">    this.dataStore = dataStore;</span>
+<span class="fc" id="L40">    this.sessionId = dataStore.getUniqueSessionId();</span>
+<span class="fc" id="L41">    this.defaultWatcher = watcher;</span>
+<span class="fc" id="L42">  }</span>
+
+  public synchronized void triggerConnect() {
+<span class="fc" id="L45">    state = ZooKeeper.States.CONNECTED;</span>
+<span class="fc" id="L46">    WatchedEvent watchedEvent =</span>
+      new WatchedEvent(EventType.None, KeeperState.SyncConnected, null);
+<span class="fc" id="L48">    dataStore.signalSessionEvent(sessionId, watchedEvent);</span>
+<span class="fc" id="L49">    defaultWatcher.process(watchedEvent);</span>
+<span class="fc" id="L50">  }</span>
+
+  public synchronized void triggerDisconnect() {
+<span class="fc" id="L53">    state = ZooKeeper.States.CONNECTING;</span>
+<span class="fc" id="L54">    WatchedEvent watchedEvent =</span>
+      new WatchedEvent(EventType.None, KeeperState.Disconnected, null);
+<span class="fc" id="L56">    dataStore.signalSessionEvent(sessionId, watchedEvent);</span>
+<span class="fc" id="L57">    defaultWatcher.process(watchedEvent);</span>
+<span class="fc" id="L58">  }</span>
+
+  public synchronized void triggerSessionExpiration() {
+<span class="fc" id="L61">    state = ZooKeeper.States.CLOSED;</span>
+<span class="fc" id="L62">    WatchedEvent watchedEvent =</span>
+      new WatchedEvent(EventType.None, KeeperState.Expired, null);
+<span class="fc" id="L64">    dataStore.signalSessionEvent(sessionId, watchedEvent);</span>
+<span class="fc" id="L65">    defaultWatcher.process(watchedEvent);</span>
+<span class="fc" id="L66">    dataStore.clearSession(sessionId);</span>
+<span class="fc" id="L67">  }</span>
+
+  @Override
+  public long getSessionId() {
+<span class="fc" id="L71">    return sessionId;</span>
+  }
+
+  @Override
+  public synchronized void close() throws InterruptedException {
+<span class="fc" id="L76">    state = ZooKeeper.States.CLOSED;</span>
+<span class="fc" id="L77">    dataStore.clearSession(sessionId);</span>
+<span class="fc" id="L78">  }</span>
+
+  private void verifyConnected() throws KeeperException {
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">    if (state == ZooKeeper.States.CLOSED) {</span>
+<span class="nc" id="L82">      throw new KeeperException.SessionExpiredException();</span>
+    }
+<span class="fc bfc" id="L84" title="All 2 branches covered.">    if (state != ZooKeeper.States.CONNECTED) {</span>
+<span class="fc" id="L85">      throw new KeeperException.ConnectionLossException();</span>
+    }
+<span class="fc" id="L87">  }</span>
+
+  @Override
+  public synchronized String create(String path, byte[] data, List&lt;ACL&gt; acl, CreateMode createMode)
+    throws KeeperException, InterruptedException {
+<span class="fc" id="L92">    verifyConnected();</span>
+<span class="fc" id="L93">    return dataStore.create(sessionId, path, data, acl, createMode);</span>
+  }
+
+  @Override
+  public synchronized void delete(String path, int expectedVersion)
+    throws InterruptedException, KeeperException {
+<span class="fc" id="L99">    verifyConnected();</span>
+<span class="fc" id="L100">    dataStore.delete(path, expectedVersion);</span>
+<span class="fc" id="L101">  }</span>
+
+  @Override
+  public synchronized Stat exists(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L106">    verifyConnected();</span>
+<span class="nc" id="L107">    return dataStore.exists(sessionId, path, watcher);</span>
+  }
+
+  @Override
+  public synchronized Stat exists(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    return exists(path, watch ? defaultWatcher : null);</span>
+  }
+
+  @Override
+  public synchronized byte[] getData(String path, Watcher watcher, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="fc" id="L119">    verifyConnected();</span>
+<span class="fc" id="L120">    return dataStore.getData(sessionId, path, watcher, stat);</span>
+  }
+
+  @Override
+  public synchronized byte[] getData(String path, boolean watch, Stat stat)
+    throws KeeperException, InterruptedException {
+<span class="nc bnc" id="L126" title="All 2 branches missed.">    return getData(path, watch ? defaultWatcher : null, stat);</span>
+  }
+
+  @Override
+  public synchronized Stat setData(String path, byte[] data, int expectedVersion)
+    throws KeeperException, InterruptedException {
+<span class="nc" id="L132">    verifyConnected();</span>
+<span class="nc" id="L133">    return dataStore.setData(path, data, expectedVersion);</span>
+  }
+
+  @Override
+  public synchronized List&lt;String&gt; getChildren(String path, Watcher watcher)
+    throws KeeperException, InterruptedException {
+<span class="fc" id="L139">    verifyConnected();</span>
+<span class="fc" id="L140">    return dataStore.getChildren(sessionId, path, watcher);</span>
+  }
+
+  @Override
+  public synchronized List&lt;String&gt; getChildren(String path, boolean watch)
+    throws KeeperException, InterruptedException {
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">    return getChildren(path, watch ? defaultWatcher : null);</span>
+  }
+
+  @Override
+  public synchronized ZooKeeper.States getState() {
+<span class="nc" id="L151">    return state;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

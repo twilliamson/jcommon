@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ZkGenericPath.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">zookeeper libraries</a> &gt; <a href="index.html" class="el_package">com.facebook.zookeeper.path</a> &gt; <span class="el_source">ZkGenericPath.java</span></div><h1>ZkGenericPath.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.zookeeper.path;
+
+import java.util.Iterator;
+
+public class ZkGenericPath {
+  private final ZkPathCore pathCore;
+
+  public ZkGenericPath(String appRoot) {
+<span class="nc" id="L24">    this(new ZkPathCore(appRoot));</span>
+<span class="nc" id="L25">  }</span>
+
+<span class="nc" id="L27">  private ZkGenericPath(ZkPathCore pathCore) {</span>
+<span class="nc" id="L28">    this.pathCore = pathCore;</span>
+<span class="nc" id="L29">  }</span>
+
+  public static ZkGenericPath parse(String appRoot, String fullPath) {
+<span class="nc" id="L32">    return new ZkGenericPath(</span>
+      new ZkPathCoreBuilder(appRoot)
+        .parse(fullPath)
+        .build()
+    );
+  }
+
+  public boolean isRoot() {
+<span class="nc" id="L40">    return pathCore.getZNodes().isEmpty();</span>
+  }
+
+  public ZkGenericPath getParent() {
+<span class="nc bnc" id="L44" title="All 2 branches missed.">    if (pathCore.getZNodes().isEmpty()) {</span>
+<span class="nc" id="L45">      throw new IllegalStateException(&quot;No more parents&quot;);</span>
+    }
+<span class="nc" id="L47">    return new ZkGenericPath(</span>
+      new ZkPathCoreBuilder(pathCore)
+        .remove()
+        .build()
+    );
+  }
+
+  public ZkGenericPath appendChild(String child) {
+<span class="nc" id="L55">    return new ZkGenericPath(</span>
+      new ZkPathCoreBuilder(pathCore)
+        .append(child)
+        .build()
+    );
+  }
+
+  public Iterator&lt;ZkGenericPath&gt; lineageIterator() {
+<span class="nc" id="L63">    return new LineageIterator();</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L68">    return pathCore.toString();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L73" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L74">      return true;</span>
+    }
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    if (!(o instanceof ZkGenericPath)) {</span>
+<span class="nc" id="L77">      return false;</span>
+    }
+
+<span class="nc" id="L80">    final ZkGenericPath that = (ZkGenericPath) o;</span>
+
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    if (!pathCore.equals(that.pathCore)) {</span>
+<span class="nc" id="L83">      return false;</span>
+    }
+
+<span class="nc" id="L86">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L91">    return pathCore.hashCode();</span>
+  }
+
+<span class="nc" id="L94">  private class LineageIterator implements Iterator&lt;ZkGenericPath&gt; {</span>
+<span class="nc" id="L95">    private final Iterator&lt;String&gt; nodeIter = pathCore.getZNodes().iterator();</span>
+<span class="nc" id="L96">    private boolean appRootReturned = false;</span>
+    private ZkGenericPath previousPath;
+
+    @Override
+    public boolean hasNext() {
+<span class="nc bnc" id="L101" title="All 4 branches missed.">      return !appRootReturned || nodeIter.hasNext();</span>
+    }
+
+    @Override
+    public ZkGenericPath next() {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">      if (!appRootReturned) {</span>
+<span class="nc" id="L107">        appRootReturned = true;</span>
+<span class="nc" id="L108">        previousPath = new ZkGenericPath(pathCore.getAppRoot());</span>
+<span class="nc" id="L109">        return previousPath;</span>
+      }
+<span class="nc" id="L111">      previousPath = previousPath.appendChild(nodeIter.next());</span>
+<span class="nc" id="L112">      return previousPath;</span>
+    }
+
+    @Override
+    public void remove() {
+<span class="nc" id="L117">      throw new UnsupportedOperationException();</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
