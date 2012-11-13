@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeInterval.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">jcommon util</a> &gt; <a href="index.html" class="el_package">com.facebook.util</a> &gt; <span class="el_source">TimeInterval.java</span></div><h1>TimeInterval.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.util;
+
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.joda.time.DateTime;
+import org.joda.time.field.FieldUtils;
+
+/**
+ * Represents Time intervals either as durations or periods and abstracts out
+ * operations on time intervals in the System.
+ * &lt;p/&gt;
+ * Durations represent a fixed period of time regardless of when
+ * they start or end. ie. 1 day will always be 86400 seconds. Instances
+ * that represent duration are constructed via {@link #withMillis(long)}.
+ * &lt;p/&gt;
+ * Periods represent a period of time but the actual time will depend
+ * on when the period starts. For example 1 day will be 23 hours on the first
+ * day of DST transition and will be 25 hours on the last day of DST transition.
+ * Instances that represent periods are constructed via
+ * {@link #withTypeAndLength(TimeIntervalType, int)}.
+ * &lt;p&gt;
+ *   The main operations abstracted out are the computation of start of
+ *   an interval and addition / subtraction of the interval from a time instant.
+ * &lt;/p&gt;
+ */
+public class TimeInterval {
+
+  /**
+   * An infinite time interval has a length of 0 and always returns the
+   * interval start as the start of unix time epoch.
+   */
+<span class="fc" id="L48">  public static final TimeInterval INFINITE = new TimeInterval(null, 0);</span>
+<span class="fc" id="L49">  public static final TimeInterval ZERO = new TimeInterval(null, -1);</span>
+  private final long length;
+  private final TimeIntervalType type;
+
+<span class="fc" id="L53">  private TimeInterval(TimeIntervalType type, long length) {</span>
+<span class="fc" id="L54">    this.type = type;</span>
+<span class="fc" id="L55">    this.length = length;</span>
+<span class="fc" id="L56">  }</span>
+
+
+  /**
+   * Creates a time interval having a fixed duration of time.
+   *
+   * @param millis the duration for the interval in milliseconds
+   * @return the time interval instance.
+   * @throws IllegalArgumentException if millis is less than 1.
+   */
+  public static TimeInterval withMillis(long millis) {
+<span class="fc" id="L67">    validateLength(millis);</span>
+<span class="fc" id="L68">    return new TimeInterval(null, millis);</span>
+  }
+
+  /**
+   * Creates a time interval period based on the supplied type. The actual duration
+   * of the period will vary depending on the time instant. The period
+   * will take into account DST, varying number of days in a month,
+   * leap years, etc.
+   * &lt;p&gt;
+   * Note that if the interval length doesn't divide the maximum value of the
+   * interval type equally, the last interval will be of a smaller length
+   * than the previous ones. For example if you specify the interval as
+   * 40 seconds, the first interval will have the first 40 seconds in a minute
+   * and the second interval will have the remaining 20 seconds in the minute.
+   * &lt;/p&gt;
+   * @param type the time interval type, cannot be null.
+   * @param length the length of the interval
+   * @return the time interval instance.
+   * @throws IllegalArgumentException if length is less than 1.
+   */
+  public static TimeInterval withTypeAndLength(TimeIntervalType type, int length) {
+<span class="fc bfc" id="L89" title="All 2 branches covered.">    if (type == null) {</span>
+<span class="fc" id="L90">      throw new IllegalArgumentException(&quot;type cannot be null&quot;);</span>
+    }
+<span class="fc" id="L92">    validateLength(length);</span>
+<span class="fc" id="L93">    return new TimeInterval(type, length);</span>
+  }
+
+  /**
+   * Used by jackson for serde
+   */
+  @JsonCreator
+  private static TimeInterval fromJson(
+    @JsonProperty(&quot;type&quot;) TimeIntervalType type,
+    @JsonProperty(&quot;length&quot;) int length
+  ) {
+<span class="fc bfc" id="L104" title="All 2 branches covered.">    if (type == null) {</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">      if (length == 0) {</span>
+<span class="fc" id="L106">        return INFINITE;</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">      } else if (length == -1) {</span>
+<span class="fc" id="L108">        return ZERO;</span>
+      }
+    }
+<span class="fc" id="L111">    validateLength(length);</span>
+<span class="fc" id="L112">    return new TimeInterval(type, length);</span>
+  }
+
+  /**
+   * Gets the start instant of the time interval that will contain the
+   * supplied time instant. Note that the time zone of the supplied instant
+   * plays a significant role in computation of the interval.
+   *
+   * @param instant the time instant
+   *
+   * @return the start instant of the time interval that will contain the
+   * instant in the time zone of the supplied instant. If the TimeInterval is INFINITE
+   * unix epoch for the timezone is returned.
+   */
+  public DateTime getIntervalStart(DateTime instant) {
+    // special handling for ZERO and INFINITE
+<span class="fc bfc" id="L128" title="All 2 branches covered.">    if (this == ZERO) {</span>
+<span class="fc" id="L129">      return instant;</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">    } else if (this == INFINITE) {</span>
+<span class="fc" id="L131">      return new DateTime(1970, 1, 1, 0, 0, 0, 0, instant.getZone());</span>
+    }
+    
+<span class="fc bfc" id="L134" title="All 2 branches covered.">    if (type == null) {</span>
+      // unix epoch for the timezone.
+<span class="fc" id="L136">      DateTime startOfTime = new DateTime(1970, 1, 1, 0, 0, 0, 0, instant.getZone());</span>
+<span class="fc" id="L137">      long intervalStart = ((instant.getMillis() - startOfTime.getMillis()) / length) * length;</span>
+<span class="fc" id="L138">      return startOfTime.plus(intervalStart);</span>
+    } else {
+<span class="fc" id="L140">      return type.getTimeIntervalStart(</span>
+        instant,
+        length
+      );
+    }
+  }
+
+  /**
+   * Adds supplied multiples of this interval to the supplied instant.
+   *
+   * @param instant the instant that needs to be added to.
+   * @param multiple the multiple value
+   * @throws IllegalArgumentException if multiple is less than one.
+   * @throws UnsupportedOperationException if the function is invoked on an {@link #INFINITE}
+   * object
+   *
+   */
+  public DateTime plus(DateTime instant, int multiple) {
+<span class="fc bfc" id="L158" title="All 2 branches covered.">    if (this == INFINITE) {</span>
+<span class="fc" id="L159">      throw new IllegalStateException(</span>
+        &quot;plus() function is not supported on an infinite TimeInterval&quot;
+      );
+<span class="fc bfc" id="L162" title="All 2 branches covered.">    } else if (this == ZERO) {</span>
+<span class="fc" id="L163">      return instant;</span>
+    }
+    
+<span class="fc" id="L166">    validateMultiple(multiple);</span>
+
+<span class="fc bfc" id="L168" title="All 2 branches covered.">    if (type == null) {</span>
+<span class="fc" id="L169">      return instant.plus(multiple * getLength());</span>
+    } else {
+<span class="fc" id="L171">      return instant.plus(</span>
+        type.toPeriod(
+          FieldUtils.safeMultiplyToInt(multiple, getLength())
+        )
+      );
+    }
+  }
+
+  /**
+   * Subtracts the supplied multiples of this interval from the supplied instant. If the
+   * TimeInterval is {@link #INFINITE} the epoch in the timezone of {@code instant} is returned
+   *
+   * @param instant the instant to subtract from
+   * @param multiple the multiple value
+   * @throws IllegalArgumentException if multiple is less than one.
+   */
+  public DateTime minus(DateTime instant, int multiple) {
+<span class="fc bfc" id="L188" title="All 2 branches covered.">    if (this == INFINITE) {</span>
+<span class="fc" id="L189">      throw new IllegalStateException(</span>
+        &quot;minus() function is not supported on an infinite TimeInterval&quot;
+      );
+<span class="fc bfc" id="L192" title="All 2 branches covered.">    } else if (this == ZERO) {</span>
+<span class="fc" id="L193">      return instant;</span>
+    }
+
+<span class="fc" id="L196">    validateMultiple(multiple);</span>
+
+<span class="fc bfc" id="L198" title="All 2 branches covered.">    if (type == null) {</span>
+<span class="fc" id="L199">      return instant.minus(multiple * getLength());</span>
+    } else {
+<span class="fc" id="L201">      return instant.minus(type.toPeriod(</span>
+        FieldUtils.safeMultiplyToInt(multiple, getLength())));
+    }
+  }
+
+  /**
+   * If this interval is of type period. Note that for {@link #INFINITE} &amp; {@link #ZERO} time
+   * intervals, this method will return false.
+   */
+  public boolean isPeriod() {
+<span class="fc bfc" id="L211" title="All 2 branches covered.">    return type != null;</span>
+  }
+
+  /**
+   * Returns the length value.
+   *
+   * @return the length value
+   */
+  @JsonProperty(&quot;length&quot;)
+  public long getLength() {
+<span class="fc" id="L221">    return length;</span>
+  }
+
+  /**
+   * Returns the interval type. Interval type is null if {@link #isPeriod()} is false.
+   *
+   * @return the interval type
+   */
+  @JsonProperty(&quot;type&quot;)
+  public TimeIntervalType getType() {
+<span class="fc" id="L231">    return type;</span>
+  }
+
+  /**
+   * Returns the length of the interval in milliseconds.
+   *
+   * Note that the length is approximate if the interval was constructed
+   * via {@link #withTypeAndLength(TimeIntervalType, int)}.
+   *
+   * Also note that this method returns zero if the TimeInterval is
+   * {@link #INFINITE}, -1 if the TimeInterval is {@link #ZERO}.
+   *
+   * @return the length in millis
+   * @deprecated Usage of this method is not encouraged because this only
+   * works if the TimeInterval represents a duration. If the time interval
+   * is period, this might return unexpected values.
+   */
+  @Deprecated
+  public long toApproxMillis() {
+<span class="fc bfc" id="L250" title="All 2 branches covered.">    if (type == null) {</span>
+<span class="fc" id="L251">      return length;</span>
+    } else {
+<span class="fc" id="L253">      return type.toDurationMillis() * length;</span>
+    }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="fc bfc" id="L259" title="All 2 branches covered.">    if (this == o) {</span>
+<span class="fc" id="L260">      return true;</span>
+    }
+<span class="fc bfc" id="L262" title="All 4 branches covered.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="fc" id="L263">      return false;</span>
+    }
+
+<span class="fc" id="L266">    final TimeInterval that = (TimeInterval) o;</span>
+
+<span class="fc bfc" id="L268" title="All 2 branches covered.">    if (length != that.length) {</span>
+<span class="fc" id="L269">      return false;</span>
+    }
+<span class="fc bfc" id="L271" title="All 2 branches covered.">    return type == that.type;</span>
+
+  }
+
+  @Override
+  public int hashCode() {
+<span class="fc" id="L277">    int result = (int) (length ^ (length &gt;&gt;&gt; 32));</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">    result = 31 * result + (type != null ? type.hashCode() : 0);</span>
+<span class="fc" id="L279">    return result;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="fc" id="L284">    return &quot;TimeInterval{&quot; +</span>
+      &quot;length=&quot; + length +
+      &quot;, type=&quot; + type +
+      '}';
+  }
+
+  private static void validateMultiple(int multiple) {
+<span class="fc bfc" id="L291" title="All 2 branches covered.">    if (multiple &lt; 0) {</span>
+<span class="fc" id="L292">      throw new IllegalArgumentException(&quot;Multiple cannot be less that 0 : &quot; + multiple);</span>
+    }
+<span class="fc" id="L294">  }</span>
+
+  private static void validateLength(long length) {
+<span class="fc bfc" id="L297" title="All 2 branches covered.">    if (length &lt; 1) {</span>
+<span class="fc" id="L298">      throw new IllegalArgumentException(&quot;length cannot be less than one: &quot; + length);</span>
+    }
+<span class="fc" id="L300">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
