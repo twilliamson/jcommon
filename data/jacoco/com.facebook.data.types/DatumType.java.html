@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DatumType.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">DatumType.java</span></div><h1>DatumType.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+
+
+
+import com.facebook.util.serialization.SerDe;
+
+import java.util.List;
+
+/**
+ * general type of a Datum; this can help a caller determine the type
+ * of the asRaw() method and is used for serializing Datums
+ */
+<span class="pc" id="L29">public enum DatumType {</span>
+<span class="fc" id="L30">  NULL(new NullDatum.SerDeImpl(), -1),</span>
+<span class="fc" id="L31">  BOOLEAN(new BooleanDatum.SerDeImpl(), 0),</span>
+<span class="fc" id="L32">  BYTE(new ByteDatum.SerDeImpl(), 1),</span>
+<span class="fc" id="L33">  CHAR(new ByteDatum.SerDeImpl(), 2), // TOOD: not used yet</span>
+<span class="fc" id="L34">  SHORT(new ShortDatum.SerDeImpl(), 3),</span>
+<span class="fc" id="L35">  INTEGER(new IntegerDatum.SerDeImpl(), 4),</span>
+<span class="fc" id="L36">  LONG(new LongDatum.SerDeImpl(), 5),</span>
+<span class="fc" id="L37">  FLOAT(new FloatDatum.SerDeImpl(), 6),</span>
+<span class="fc" id="L38">  DOUBLE(new DoubleDatum.SerDeImpl(), 7),</span>
+<span class="fc" id="L39">  STRING(new StringDatum.SerDeImpl(), 8),</span>
+<span class="fc" id="L40">  LIST(new ListDatum.SerDeImpl(), 9),</span>
+<span class="fc" id="L41">  MAP(new MapDatum.SerDeImpl(), 10),</span>
+<span class="fc" id="L42">  OTHER(null, 127), // TODO ?</span>
+  ;
+
+  private final SerDe&lt;Datum&gt; serDe;
+  private final byte typeAsByte;
+
+<span class="fc" id="L48">  DatumType(SerDe&lt;Datum&gt; serDe, byte typeAsByte) {</span>
+<span class="fc" id="L49">    this.serDe = serDe;</span>
+<span class="fc" id="L50">    this.typeAsByte = typeAsByte;</span>
+<span class="fc" id="L51">  }</span>
+
+  DatumType(SerDe&lt;Datum&gt; serDe, int i) {
+<span class="fc" id="L54">    this(serDe, (byte) i);</span>
+<span class="fc" id="L55">  }</span>
+
+  public SerDe&lt;Datum&gt; getSerDe() {
+<span class="fc" id="L58">    return serDe;</span>
+  }
+
+  public byte getTypeAsByte() {
+<span class="fc" id="L62">    return typeAsByte;</span>
+  }
+
+  public static DatumType fromByte(byte typeAsByte) {
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">    if (typeAsByte == NULL.getTypeAsByte()) {</span>
+<span class="nc" id="L67">      return NULL;</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">    } else if (typeAsByte == BOOLEAN.getTypeAsByte()) {</span>
+<span class="fc" id="L69">      return BOOLEAN;</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">    } else if (typeAsByte == BYTE.getTypeAsByte()) {</span>
+<span class="fc" id="L71">      return BYTE;</span>
+<span class="pc bpc" id="L72" title="1 of 2 branches missed.">    } else if (typeAsByte == CHAR.getTypeAsByte()) {</span>
+<span class="nc" id="L73">      return CHAR;</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">    } else if (typeAsByte == SHORT.getTypeAsByte()) {</span>
+<span class="fc" id="L75">      return SHORT;</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">    } else if (typeAsByte == INTEGER.getTypeAsByte()) {</span>
+<span class="fc" id="L77">      return INTEGER;</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">    } else if (typeAsByte == LONG.getTypeAsByte()) {</span>
+<span class="fc" id="L79">      return LONG;</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">    } else if (typeAsByte == FLOAT.getTypeAsByte()) {</span>
+<span class="fc" id="L81">      return FLOAT;</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">    } else if (typeAsByte == DOUBLE.getTypeAsByte()) {</span>
+<span class="fc" id="L83">      return DOUBLE;</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">    } else if (typeAsByte == STRING.getTypeAsByte()) {</span>
+<span class="fc" id="L85">      return STRING;</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">    } else if (typeAsByte == LIST.getTypeAsByte()) {</span>
+<span class="fc" id="L87">      return LIST;</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">    } else if (typeAsByte == MAP.getTypeAsByte()) {</span>
+<span class="nc" id="L89">      return MAP;</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    } else if (typeAsByte == OTHER.getTypeAsByte()) {</span>
+<span class="nc" id="L91">      return OTHER;</span>
+    } else {
+<span class="nc" id="L93">      throw new IllegalArgumentException(&quot;unknown byte type: &quot; + typeAsByte);</span>
+    }
+  }
+
+  /**
+   * helper function to see if the value is a Long or less
+   *
+   * @param datum
+   * @return
+   */
+  public static boolean isLongCompatible(Datum datum) {
+<span class="fc" id="L104">    DatumType datumType = datum.getType();</span>
+<span class="pc bpc" id="L105" title="1 of 4 branches missed.">    boolean singleItemType = datumType.compareTo(BOOLEAN) &gt;= 0 &amp;&amp; datumType.compareTo(LONG) &lt;= 0;</span>
+
+<span class="pc bpc" id="L107" title="1 of 4 branches missed.">    if (!singleItemType &amp;&amp; datumType == LIST) {</span>
+      // only special case is List, since we promote a single-item list to a &quot;scalar&quot; datum
+      // recursively 
+<span class="nc" id="L110">      List&lt;Datum&gt; listDatum = ((ListDatum) datum).asList();</span>
+
+<span class="nc bnc" id="L112" title="All 4 branches missed.">      return listDatum.size() == 1 &amp;&amp; isLongCompatible(listDatum.get(0));</span>
+    } else {
+<span class="fc" id="L114">      return singleItemType;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

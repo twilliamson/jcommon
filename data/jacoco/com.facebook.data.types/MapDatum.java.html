@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MapDatum.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">data</a> &gt; <a href="index.html" class="el_package">com.facebook.data.types</a> &gt; <span class="el_source">MapDatum.java</span></div><h1>MapDatum.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.data.types;
+
+import com.facebook.collectionsbase.Lists;
+import com.facebook.util.serialization.SerDe;
+import com.facebook.util.serialization.SerDeException;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Datum is a very generic class that encapsulates actual data as well
+ * as methods to inspect what it is.
+ */
+public class MapDatum implements Datum {
+<span class="fc" id="L40">  private static final Comparator&lt;Map.Entry&lt;Datum, Datum&gt;&gt; ENTRY_COMPARATOR =</span>
+<span class="fc" id="L41">    new Comparator&lt;Map.Entry&lt;Datum, Datum&gt;&gt;() {</span>
+      @Override
+      public int compare(
+        Map.Entry&lt;Datum, Datum&gt; o1, Map.Entry&lt;Datum, Datum&gt; o2
+      ) {
+<span class="fc" id="L46">        int keyResult = o1.getKey().compareTo(o2.getKey());</span>
+
+<span class="fc bfc" id="L48" title="All 2 branches covered.">        if (keyResult == 0) {</span>
+<span class="fc" id="L49">          return o1.getValue().compareTo(o2.getValue());</span>
+        }
+
+<span class="fc" id="L52">        return keyResult;</span>
+      }
+    };
+<span class="fc" id="L55">  private final static DatumSerDe DATUM_SER_DE = new DatumSerDe();</span>
+
+  private final Map&lt;Datum, Datum&gt; map;
+
+<span class="fc" id="L59">  public MapDatum(Map&lt;Datum, Datum&gt; map) {</span>
+<span class="fc" id="L60">    this.map = map;</span>
+<span class="fc" id="L61">  }</span>
+
+  public MapDatum() {
+<span class="nc" id="L64">    this(new HashMap&lt;Datum, Datum&gt;());</span>
+<span class="nc" id="L65">  }</span>
+
+  /**
+   * @return true if the hash is non-empty
+   */
+  @Override
+  public boolean asBoolean() {
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    return !map.isEmpty();</span>
+  }
+
+  /**
+   * number of keys; may overflow
+   *
+   * @return
+   */
+  @Override
+  public byte asByte() {
+<span class="nc" id="L82">    return (byte) map.size();</span>
+  }
+
+  /**
+   * number of keys; may overflow
+   *
+   * @return
+   */
+  @Override
+  public short asShort() {
+<span class="nc" id="L92">    return (short) map.size();</span>
+  }
+
+  /**
+   * number of keys
+   *
+   * @return
+   */
+  @Override
+  public int asInteger() {
+<span class="nc" id="L102">    return map.size();</span>
+  }
+
+  /**
+   * number of keys
+   *
+   * @return
+   */
+  @Override
+  public long asLong() {
+<span class="nc" id="L112">    return map.size();</span>
+  }
+
+  @Override
+  public float asFloat() {
+<span class="nc" id="L117">    throw new UnsupportedOperationException();</span>
+  }
+
+  @Override
+  public double asDouble() {
+<span class="nc" id="L122">    throw new UnsupportedOperationException();</span>
+
+  }
+
+  /**
+   * nested data structure are rendered with asString()
+   *
+   * @return JSON representation of map { k1 : v1, k2 : v2, ...}
+   */
+  @Override
+  public String asString() {
+<span class="fc" id="L133">    JSONObject jsonObject = new JSONObject();</span>
+
+    try {
+<span class="fc bfc" id="L136" title="All 2 branches covered.">      for (Map.Entry&lt;Datum, Datum&gt; entry : map.entrySet()) {</span>
+<span class="fc" id="L137">        String key = entry.getKey().asString();</span>
+<span class="fc" id="L138">        String value = entry.getValue().asString();</span>
+
+<span class="fc" id="L140">        jsonObject.put(key, value);</span>
+<span class="fc" id="L141">      }</span>
+
+<span class="fc" id="L143">      return jsonObject.toString(2);</span>
+<span class="nc" id="L144">    } catch (JSONException e) {</span>
+<span class="nc" id="L145">      throw new RuntimeException(&quot;error converting json object to string&quot;);</span>
+    }
+  }
+
+  @Override
+  public byte[] asBytes() {
+    try {
+      // todo: use jackson to to JSON encoding, or can we somehow just
+      // call asBytes() on each key/value and concatenate?
+      // (also, as this is used for unique counts, who does a unique
+      // on Map?  watch a use cometh...)
+<span class="fc" id="L156">      return asString().getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc" id="L157">    } catch (UnsupportedEncodingException e) {</span>
+<span class="nc" id="L158">      throw new RuntimeException(&quot;failed to encode as UTF-8&quot;);</span>
+    }
+  }
+
+  @Override
+  public boolean isNull() {
+<span class="nc" id="L164">    return false;</span>
+  }
+
+  @Override
+  public DatumType getType() {
+<span class="nc" id="L169">    return DatumType.MAP;</span>
+  }
+
+  @Override
+  public Object asRaw() {
+<span class="nc" id="L174">    return map;</span>
+  }
+
+  public Map&lt;Datum, Datum&gt; getMap() {
+<span class="fc" id="L178">    return map;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L183">    return asString();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="fc bfc" id="L188" title="All 2 branches covered.">    if (this == o) {</span>
+<span class="fc" id="L189">      return true;</span>
+    }
+<span class="pc bpc" id="L191" title="1 of 2 branches missed.">    if (!(o instanceof MapDatum)) {</span>
+<span class="nc" id="L192">      return false;</span>
+    }
+
+<span class="fc" id="L195">    final MapDatum mapDatum = (MapDatum) o;</span>
+
+<span class="pc bpc" id="L197" title="3 of 6 branches missed.">    if (map != null ? !map.equals(mapDatum.map) : mapDatum.map != null) {</span>
+<span class="fc" id="L198">      return false;</span>
+    }
+
+<span class="fc" id="L201">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L206" title="All 2 branches missed.">    return map != null ? map.hashCode() : 0;</span>
+  }
+
+  @Override
+  public int compareTo(Datum o) {
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">    if (!(o instanceof MapDatum)) {</span>
+<span class="nc" id="L212">      throw new IllegalArgumentException(&quot;need MapDatum&quot;);</span>
+    }
+    @SuppressWarnings({&quot;unchecked&quot;})
+<span class="fc" id="L215">    MapDatum otherMapDatum = (MapDatum) o;</span>
+    // this is only used in InMemoryStorage for unit tests, so it can e
+    // inefficient; this is terribly inefficient, but it provides
+    // some way to comapre maps :)
+
+<span class="fc" id="L220">    List&lt;Map.Entry&lt;Datum, Datum&gt;&gt; entryList1 =</span>
+      new ArrayList&lt;&gt;(map.entrySet());
+<span class="fc" id="L222">    List&lt;Map.Entry&lt;Datum, Datum&gt;&gt; entryList2 =</span>
+      new ArrayList&lt;&gt;(otherMapDatum.map.entrySet());
+
+<span class="fc" id="L225">    Collections.sort(entryList1, ENTRY_COMPARATOR);</span>
+<span class="fc" id="L226">    Collections.sort(entryList2, ENTRY_COMPARATOR);</span>
+
+<span class="fc" id="L228">    return Lists.compareLists(entryList1, entryList2, ENTRY_COMPARATOR);</span>
+  }
+
+<span class="fc" id="L231">  public static class SerDeImpl implements SerDe&lt;Datum&gt; {</span>
+    @Override
+    public Datum deserialize(DataInput in) throws SerDeException {
+      try {
+<span class="fc" id="L235">        int numEntires = in.readInt();</span>
+<span class="fc" id="L236">        Map&lt;Datum, Datum&gt; map = new HashMap&lt;&gt;(numEntires);</span>
+
+<span class="fc bfc" id="L238" title="All 2 branches covered.">        for (int i = 0; i &lt; numEntires; i++) {</span>
+<span class="fc" id="L239">          Datum key = DATUM_SER_DE.deserialize(in);</span>
+<span class="fc" id="L240">          Datum value = DATUM_SER_DE.deserialize(in);</span>
+
+<span class="fc" id="L242">          map.put(key, value);</span>
+        }
+
+<span class="fc" id="L245">        MapDatum result = new MapDatum(map);</span>
+
+<span class="fc" id="L247">        return result;</span>
+<span class="nc" id="L248">      } catch (IOException e) {</span>
+<span class="nc" id="L249">        throw new SerDeException(e);</span>
+      }
+    }
+
+    @Override
+    public void serialize(Datum value, DataOutput out)
+      throws SerDeException {
+<span class="pc bpc" id="L256" title="1 of 2 branches missed.">      if (value instanceof MapDatum) {</span>
+<span class="fc" id="L257">        MapDatum mapDatum = (MapDatum) value;</span>
+<span class="fc" id="L258">        Map&lt;Datum, Datum&gt; map = mapDatum.getMap();</span>
+        try {
+<span class="fc" id="L260">          out.writeInt(map.size());</span>
+
+<span class="fc bfc" id="L262" title="All 2 branches covered.">          for (Map.Entry&lt;Datum, Datum&gt; entry : map.entrySet()) {</span>
+<span class="fc" id="L263">            DATUM_SER_DE.serialize(entry.getKey(), out);</span>
+<span class="fc" id="L264">            DATUM_SER_DE.serialize(entry.getValue(), out);</span>
+<span class="fc" id="L265">          }</span>
+<span class="nc" id="L266">        } catch (IOException e) {</span>
+<span class="nc" id="L267">          throw new SerDeException(e);</span>
+<span class="fc" id="L268">        }</span>
+<span class="fc" id="L269">      } else {</span>
+<span class="nc" id="L270">        throw new IllegalArgumentException(</span>
+          &quot;MapDatum.SerDe serializer requires MapDatum&quot;
+        );
+      }
+<span class="fc" id="L274">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
