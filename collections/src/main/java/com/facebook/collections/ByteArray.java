@@ -54,12 +54,7 @@ public abstract class ByteArray implements Comparable<ByteArray> {
       return false;
     }
 
-
-    int array1Length = array1.getLength();
-    int array2Length = array2.getLength();
-
-    return array1Length == array2Length && Arrays.equals(array1.getArray(), array2.getArray());
-
+    return Arrays.equals(array1.getArray(), array2.getArray());
   }
 
   public boolean equals(Object o) {
@@ -86,7 +81,6 @@ public abstract class ByteArray implements Comparable<ByteArray> {
     public byte[] getArray() {
       return array;
     }
-
 
     @Override
     public int getLength() {
@@ -120,7 +114,6 @@ public abstract class ByteArray implements Comparable<ByteArray> {
     private final byte[] array;
     private final int offset;
     private final int length;
-
 
     private ByteArrayView(byte[] array, int offset, int length) {
       this.array = array;
@@ -213,7 +206,6 @@ public abstract class ByteArray implements Comparable<ByteArray> {
           return 1;
         }
       }
-
 
       if (array1Length < array2Length) {
         return -1;
