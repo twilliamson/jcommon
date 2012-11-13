@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SortedStaticModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">SortedStaticModel.java</span></div><h1>SortedStaticModel.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ComparisonChain;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import static com.facebook.stats.cardinality.StaticModelUtil.weightsToProbabilities;
+
+class SortedStaticModel implements Model {
+  private final int[] symbolToIndex;
+  private final int[] indexToSymbol;
+
+  private final int[] countsByIndex;
+
+  private final int totalIndex;
+
+<span class="nc" id="L36">  public SortedStaticModel(double[] weights) {</span>
+<span class="nc" id="L37">    Preconditions.checkNotNull(weights, &quot;weights is null&quot;);</span>
+
+<span class="nc bnc" id="L39" title="All 2 branches missed.">    Preconditions.checkArgument(weights.length &gt; 1, &quot;weights is empty&quot;);</span>
+<span class="nc bnc" id="L40" title="All 2 branches missed.">    Preconditions.checkArgument(</span>
+        weights.length &lt;= 512,
+        &quot;weights is can not have more than 512 entries&quot;
+    );
+
+<span class="nc" id="L45">    symbolToIndex = new int[weights.length + 1];</span>
+<span class="nc" id="L46">    indexToSymbol = new int[weights.length + 1];</span>
+<span class="nc" id="L47">    countsByIndex = new int[weights.length + 1];</span>
+<span class="nc" id="L48">    totalIndex = weights.length;</span>
+
+<span class="nc" id="L50">    double[] probabilities = weightsToProbabilities(weights);</span>
+<span class="nc" id="L51">    List&lt;SymbolProbability&gt; symbolProbabilities = sortProbabilities(probabilities);</span>
+
+<span class="nc" id="L53">    int symbolIndex = 0;</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">    for (SymbolProbability symbolProbability : symbolProbabilities) {</span>
+<span class="nc" id="L55">      int symbol = symbolProbability.symbol;</span>
+<span class="nc" id="L56">      double probability = symbolProbability.probability;</span>
+
+<span class="nc" id="L58">      symbolToIndex[symbol] = symbolIndex;</span>
+<span class="nc" id="L59">      indexToSymbol[symbolIndex] = symbol;</span>
+
+      // value is low count + % of MAX_TOTAL
+<span class="nc" id="L62">      int value = countsByIndex[symbolIndex] + ((int) (StaticModelUtil.MAX_COUNT * probability));</span>
+      // reserve one space for each symbol
+<span class="nc" id="L64">      value = Math.min(value, StaticModelUtil.MAX_COUNT - (probabilities.length - symbolIndex));</span>
+      // high must be at least one bigger than the low
+<span class="nc" id="L66">      value = Math.max(value, countsByIndex[symbolIndex] + 1);</span>
+
+<span class="nc" id="L68">      countsByIndex[symbolIndex + 1] = value;</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">      if (countsByIndex[symbolIndex + 1] &lt;= countsByIndex[symbolIndex]) {</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        Preconditions.checkState(</span>
+            countsByIndex[symbolIndex + 1] &gt; countsByIndex[symbolIndex],
+            &quot;Internal error: symbol %s high value %s is not greater than the low value %s&quot;,
+            symbol,
+            countsByIndex[symbolIndex + 1],
+            countsByIndex[symbolIndex]
+        );
+      }
+
+<span class="nc" id="L79">      symbolIndex++;</span>
+<span class="nc" id="L80">    }</span>
+
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    Preconditions.checkState(</span>
+        countsByIndex[totalIndex - 1] &lt; StaticModelUtil.MAX_COUNT,
+        &quot;Internal error: model max value %s must be less than %s&quot;
+    );
+<span class="nc" id="L86">    symbolToIndex[totalIndex] = -1;</span>
+<span class="nc" id="L87">    countsByIndex[totalIndex] = StaticModelUtil.MAX_COUNT;</span>
+
+    // verify model
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    for (int i = 1; i &lt; countsByIndex.length; i++) {</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">      Preconditions.checkState(</span>
+          countsByIndex[i - 1] &lt; countsByIndex[i],
+          &quot;Internal error: model is invalid&quot;
+      );
+    }
+<span class="nc" id="L96">  }</span>
+
+  @Override
+  public SymbolInfo getSymbolInfo(int symbol) {
+<span class="nc" id="L100">    Preconditions.checkPositionIndex(symbol, symbolToIndex.length, &quot;symbol&quot;);</span>
+<span class="nc" id="L101">    int symbolIndex = symbolToIndex[symbol];</span>
+<span class="nc" id="L102">    return new SymbolInfo(symbol, countsByIndex[symbolIndex], countsByIndex[symbolIndex + 1]);</span>
+  }
+
+  @Override
+  public int log2MaxCount() {
+<span class="nc" id="L107">    return StaticModelUtil.COUNT_BITS;</span>
+  }
+
+  @Override
+  public SymbolInfo countToSymbol(int targetCount) {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">    Preconditions.checkArgument(targetCount &gt;= 0, &quot;targetCount is negative %s&quot;, targetCount);</span>
+
+    // Since symbols are sorted by probability, simply linearly search for the symbol
+<span class="nc bnc" id="L115" title="All 2 branches missed.">    for (int symbolIndex = 0; symbolIndex &lt; countsByIndex.length; symbolIndex++) {</span>
+<span class="nc" id="L116">      int count = countsByIndex[symbolIndex + 1];</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">      if (targetCount &lt; count) {</span>
+<span class="nc" id="L118">        return new SymbolInfo(</span>
+            indexToSymbol[symbolIndex],
+            countsByIndex[symbolIndex],
+            countsByIndex[symbolIndex + 1]
+        );
+      }
+    }
+<span class="nc" id="L125">    throw new IllegalArgumentException(&quot;invalid target count &quot; + targetCount);</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L130" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L131">      return true;</span>
+    }
+<span class="nc bnc" id="L133" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L134">      return false;</span>
+    }
+
+<span class="nc" id="L137">    SortedStaticModel staticModel = (SortedStaticModel) o;</span>
+
+<span class="nc bnc" id="L139" title="All 2 branches missed.">    if (totalIndex != staticModel.totalIndex) {</span>
+<span class="nc" id="L140">      return false;</span>
+    }
+<span class="nc bnc" id="L142" title="All 2 branches missed.">    if (!Arrays.equals(countsByIndex, staticModel.countsByIndex)) {</span>
+<span class="nc" id="L143">      return false;</span>
+    }
+
+<span class="nc" id="L146">    return true;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L151">    int result = Arrays.hashCode(countsByIndex);</span>
+<span class="nc" id="L152">    result = 31 * result + totalIndex;</span>
+<span class="nc" id="L153">    return result;</span>
+  }
+
+  private static class SymbolProbability implements Comparable&lt;SymbolProbability&gt; {
+    private final int symbol;
+    private final double probability;
+
+<span class="nc" id="L160">    private SymbolProbability(int symbol, double probability) {</span>
+<span class="nc" id="L161">      this.symbol = symbol;</span>
+<span class="nc" id="L162">      this.probability = probability;</span>
+<span class="nc" id="L163">    }</span>
+
+    @Override
+    public int compareTo(SymbolProbability o) {
+<span class="nc" id="L167">      return ComparisonChain</span>
+          .start()
+          .compare(o.probability, probability)
+          .compare(symbol, o.symbol)
+          .result();
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L176">      final StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L177">      sb.append(&quot;SymbolProbability&quot;);</span>
+<span class="nc" id="L178">      sb.append(&quot;{symbol=&quot;).append(symbol);</span>
+<span class="nc" id="L179">      sb.append(&quot;, probability=&quot;).append(probability);</span>
+<span class="nc" id="L180">      sb.append('}');</span>
+<span class="nc" id="L181">      return sb.toString();</span>
+    }
+  }
+
+  private List&lt;SymbolProbability&gt; sortProbabilities(double[] probabilities) {
+<span class="nc" id="L186">    ArrayList&lt;SymbolProbability&gt; symbolProbabilities = new ArrayList&lt;SymbolProbability&gt;();</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">    for (int symbol = 0; symbol &lt; probabilities.length; symbol++) {</span>
+<span class="nc" id="L188">      symbolProbabilities.add(new SymbolProbability(symbol, probabilities[symbol]));</span>
+    }
+<span class="nc" id="L190">    Collections.sort(symbolProbabilities);</span>
+<span class="nc" id="L191">    return symbolProbabilities;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

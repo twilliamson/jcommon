@@ -1,0 +1,374 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AbstractCompositeCounter.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">AbstractCompositeCounter.java</span></div><h1>AbstractCompositeCounter.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import com.facebook.collections.PeekableIterator;
+import com.facebook.stats.mx.StatsUtil;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterators;
+import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+import org.joda.time.ReadableDuration;
+
+import javax.annotation.concurrent.GuardedBy;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.Iterator;
+import java.util.List;
+
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
+/**
+ * Tracks stats over a rolling time period (time window) of maxLength
+ * broken into parts (eventCounters list) of size maxChunkLength.
+ * Meant to be subclassed.  Primary use is through repeatedly calling
+ * add() and occasionally calling getValue().
+ * &lt;p/&gt;
+ * 1. Does trimming of event buckets (based on the window size)
+ * 2. Allows for updates of this window's events based on updates to
+ * component windows (useful for overlapping window stats)
+ * &lt;p/&gt;
+ * Optimized for write-heavy counters.
+ */
+public abstract class AbstractCompositeCounter&lt;C extends EventCounterIf&lt;C&gt;&gt;
+  implements CompositeEventCounterIf&lt;C&gt; {
+
+  // adds/removes to eventCounters happen only when synchronized on &quot;this&quot;
+<span class="fc" id="L55">  @GuardedBy(&quot;this&quot;)</span>
+  private final Deque&lt;C&gt; eventCounters = new ArrayDeque&lt;C&gt;();
+  private final ReadableDuration maxLength;      // total window size
+  private final ReadableDuration maxChunkLength; // size per counter
+
+  private ReadableDateTime start;
+  private ReadableDateTime end;
+
+  /*
+   * Create a CompositeCounter of window size maxLength broken into
+   * individual eventCounters of size maxChunkLength.
+   */
+  public AbstractCompositeCounter(
+    ReadableDuration maxLength, ReadableDuration maxChunkLength
+<span class="fc" id="L69">  ) {</span>
+<span class="fc" id="L70">    this.maxLength = maxLength;</span>
+<span class="fc" id="L71">    this.maxChunkLength = maxChunkLength;</span>
+
+<span class="fc" id="L73">    DateTime now = new DateTime();</span>
+
+<span class="fc" id="L75">    start = now;</span>
+<span class="fc" id="L76">    end = now;</span>
+<span class="fc" id="L77">  }</span>
+
+  public AbstractCompositeCounter(ReadableDuration maxLength) {
+<span class="fc" id="L80">    this(maxLength, new Duration(maxLength.getMillis() / 10));</span>
+<span class="fc" id="L81">  }</span>
+
+  /**
+   * Create a new counter that is the result of merging this counter and the argument. No deep
+   * copy is performed, so the resulting copy could in theory be a counter that just lists
+   * this and counter in a list
+   *
+   * @param counter : other counter to use in merge
+   * @return
+   */
+  @Override
+  public abstract C merge(C counter);
+
+  /**
+   * calldd when a new counter is needed for the range [start, end)
+   *
+   * @param start
+   * @param end
+   * @return new counter for range [start, end) to second resolution
+   */
+  protected abstract C nextCounter(ReadableDateTime start, ReadableDateTime end);
+
+  /**
+   * Adds the value to the counter, and may create a new eventCounter
+   * to store the value if needed.
+   */
+  @Override
+  public void add(long delta) {
+<span class="fc" id="L109">    DateTime now = new DateTime();</span>
+    C last;
+
+<span class="fc" id="L112">    synchronized (this) {</span>
+<span class="fc bfc" id="L113" title="All 4 branches covered.">      if (eventCounters.isEmpty() || !now.isBefore(eventCounters.getLast().getEnd())) {</span>
+<span class="fc" id="L114">        addEventCounter(nextCounter(now, now.plus(maxChunkLength)));</span>
+      }
+
+<span class="fc" id="L117">      last = eventCounters.getLast();</span>
+<span class="pc" id="L118">    }</span>
+
+<span class="fc" id="L120">    last.add(delta);</span>
+<span class="fc" id="L121">  }</span>
+
+
+  public ReadableDateTime getStart() {
+<span class="fc" id="L125">    trimIfNeeded();</span>
+
+<span class="fc" id="L127">    return start;</span>
+  }
+
+  public ReadableDateTime getEnd() {
+<span class="fc" id="L131">    trimIfNeeded();</span>
+
+<span class="fc" id="L133">    return end;</span>
+  }
+
+  @Override
+  public Duration getLength() {
+<span class="nc" id="L138">    trimIfNeeded();</span>
+
+<span class="nc" id="L140">    return new Duration(start, end);</span>
+  }
+
+  @Override
+  public synchronized CompositeEventCounterIf&lt;C&gt; add(
+    long delta, ReadableDateTime start, ReadableDateTime end
+  ) {
+<span class="nc" id="L147">    C counter = nextCounter(start, end);</span>
+
+<span class="nc" id="L149">    counter.add(delta);</span>
+
+<span class="nc" id="L151">    return addEventCounter(counter);</span>
+  }
+
+  @Override
+  public synchronized CompositeEventCounterIf&lt;C&gt; addEventCounter(C eventCounter) {
+<span class="fc bfc" id="L156" title="All 2 branches covered.">    if (eventCounters.size() &gt;= 2) {</span>
+<span class="fc" id="L157">      mergeChunksIfNeeded();</span>
+    }
+
+    // merge above before adding the counter; the invariant is that the
+    // added counter should not be merged until it is not the most recent
+    // counter
+<span class="pc bpc" id="L163" title="1 of 6 branches missed.">    Preconditions.checkArgument(</span>
+      eventCounters.isEmpty() || !eventCounters.getLast().getEnd().isAfter(eventCounter.getEnd()),
+      &quot;new counter end , %s, is not past the current end %s&quot;,
+      eventCounter.getEnd(),
+      eventCounters.isEmpty() ? &quot;NaN&quot; : eventCounters.getLast().getEnd()
+    );
+
+<span class="fc" id="L170">    eventCounters.add(eventCounter);</span>
+
+<span class="fc bfc" id="L172" title="All 2 branches covered.">    if (eventCounter.getStart().isBefore(start)) {</span>
+<span class="fc" id="L173">      start = eventCounter.getStart();</span>
+<span class="fc" id="L174">      trimIfNeeded();</span>
+    }
+
+<span class="fc bfc" id="L177" title="All 2 branches covered.">    if (eventCounter.getEnd().isAfter(end)) {</span>
+<span class="fc" id="L178">      end = eventCounter.getEnd();</span>
+<span class="fc" id="L179">      trimIfNeeded();</span>
+    }
+
+<span class="fc" id="L182">    return this;</span>
+  }
+
+  /**
+   * testing to see if we can merge counter1 and counter2 and not violate
+   * the maxChunkLength
+   * &lt;p/&gt;
+   * ...| counter2 | counter1 |
+   */
+  private void mergeChunksIfNeeded() {
+<span class="fc" id="L192">    C counter1 = eventCounters.removeLast();</span>
+<span class="fc" id="L193">    C counter2 = eventCounters.getLast();</span>
+
+<span class="fc bfc" id="L195" title="All 2 branches covered.">    if (StatsUtil.extentOf(counter1, counter2).isLongerThan(maxChunkLength)) {</span>
+<span class="fc" id="L196">      eventCounters.add(counter1);</span>
+    } else {
+<span class="fc" id="L198">      eventCounters.removeLast();</span>
+<span class="fc" id="L199">      eventCounters.add(counter1.merge(counter2));</span>
+    }
+<span class="fc" id="L201">  }</span>
+
+  /**
+   * This merges another sorted list of counters with our own and produces
+   * a new counter.
+   * &lt;p/&gt;
+   * our own counters are protected from mutation via synchronization. The behavior of this function
+   * is not defined if otherCounters changes while a merge is taking place;
+   *
+   * @param otherCounters usually some other object's counters, or a single counter that's being added
+   *                      via addEventCounter()
+   * @param mergedCounter
+   * @param &lt;C2&gt;
+   * @return
+   */
+  protected synchronized &lt;C2 extends CompositeEventCounterIf&lt;C&gt;&gt; C2 internalMerge(
+    Collection&lt;? extends C&gt; otherCounters, C2 mergedCounter
+  ) {
+<span class="fc" id="L219">    PeekableIterator&lt;C&gt; iter1 = new PeekableIterator&lt;C&gt;(eventCounters.iterator());</span>
+<span class="fc" id="L220">    PeekableIterator&lt;C&gt; iter2 = new PeekableIterator&lt;C&gt;(otherCounters.iterator());</span>
+
+<span class="fc bfc" id="L222" title="All 4 branches covered.">    while (iter1.hasNext() || iter2.hasNext()) {</span>
+<span class="fc bfc" id="L223" title="All 4 branches covered.">      if (iter1.hasNext() &amp;&amp; iter2.hasNext()) {</span>
+        // take the counter that occurs first and merge it
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        if (iter1.peekNext().getStart().isBefore(iter2.peekNext().getStart())) {</span>
+<span class="fc" id="L226">          mergedCounter.addEventCounter(iter1.next());</span>
+        } else {
+<span class="fc" id="L228">          mergedCounter.addEventCounter(iter2.next());</span>
+        }
+<span class="fc bfc" id="L230" title="All 2 branches covered.">      } else if (iter1.hasNext()) {</span>
+<span class="fc" id="L231">        mergedCounter.addEventCounter(iter1.next());</span>
+<span class="pc bpc" id="L232" title="1 of 2 branches missed.">      } else if (iter2.hasNext()) {</span>
+<span class="fc" id="L233">        mergedCounter.addEventCounter(iter2.next());</span>
+      }
+    }
+
+<span class="fc" id="L237">    return mergedCounter;</span>
+  }
+
+  /**
+   * Updates the current composite counter so that it is up to date with the
+   * current timestamp.
+   * &lt;p/&gt;
+   * This should be called by any method that needs to have the most updated
+   * view of the current set of counters.
+   */
+  protected synchronized void trimIfNeeded() {
+<span class="fc" id="L248">    Duration delta = new Duration(start, new DateTime())</span>
+      .minus(maxLength);
+
+<span class="fc bfc" id="L251" title="All 2 branches covered.">    if (delta.isLongerThan(Duration.ZERO)) {</span>
+<span class="fc" id="L252">      start = start.toDateTime().plus(delta);</span>
+
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">      if (start.isAfter(end)) {</span>
+<span class="nc" id="L255">        end = start;</span>
+      }
+
+<span class="fc" id="L258">      Iterator&lt;C&gt; iter = eventCounters.iterator();</span>
+
+<span class="fc bfc" id="L260" title="All 2 branches covered.">      while (iter.hasNext()) {</span>
+<span class="fc" id="L261">        EventCounterIf&lt;C&gt; counter = iter.next();</span>
+
+        // trim any counter with an end up to and including start since our composite counter is
+        // [start, ... and each counter is [..., end)
+<span class="fc bfc" id="L265" title="All 2 branches covered.">        if (!start.isBefore(counter.getEnd())) {</span>
+<span class="fc" id="L266">          iter.remove();</span>
+        } else {
+          break;
+        }
+<span class="fc" id="L270">      }</span>
+    }
+<span class="fc" id="L272">  }</span>
+
+  /**
+   * Takes the oldest counter and returns the fraction [0, 1] of it that
+   * has extended outside the current time window of the composite counter.
+   * &lt;p/&gt;
+   * Assumes:
+   * counter.getEnd() &gt;= window.getStart()
+   * counter.getStart() &lt; window.getStart()
+   *
+   * @param oldestCounter
+   * @return fraction [0, 1]
+   */
+  protected float getExpiredFraction(EventCounterIf&lt;C&gt; oldestCounter) {
+<span class="fc" id="L286">    ReadableDateTime windowStart = getWindowStart();</span>
+
+    //counter.getEnd() &gt;= window.getStart()
+<span class="pc bpc" id="L289" title="1 of 2 branches missed.">    checkArgument(</span>
+      !oldestCounter.getEnd().isBefore(windowStart),
+      &quot;counter should have end %s &gt;= window start %s&quot;, oldestCounter.getEnd(), windowStart
+    );
+
+<span class="fc" id="L294">    ReadableDateTime counterStart = oldestCounter.getStart();</span>
+
+    //counter.getstart() &lt; window.getStart()
+<span class="fc" id="L297">    checkArgument(</span>
+      counterStart.isBefore(windowStart),
+      String.format(
+        &quot;counter should have start %s &lt;= window start %s&quot;, counterStart, windowStart
+      )
+    );
+
+    //
+<span class="fc" id="L305">    long expiredPortionMillis = windowStart.getMillis() - counterStart.getMillis();</span>
+<span class="fc" id="L306">    long lengthMillis = oldestCounter.getEnd().getMillis() - counterStart.getMillis();</span>
+<span class="fc" id="L307">    float expiredFraction = expiredPortionMillis / (float) lengthMillis;</span>
+
+<span class="pc bpc" id="L309" title="2 of 4 branches missed.">    checkState(</span>
+      expiredFraction &gt;= 0 &amp;&amp; expiredFraction &lt;= 1.0,
+      String.format(
+        &quot;%s not in [0, 1]&quot;, expiredFraction
+      )
+    );
+
+<span class="fc" id="L316">    return expiredFraction;</span>
+  }
+
+  /**
+   * return a copy of current list of event counters; same properties as getEventCounters, but
+   * a copy
+   *
+   * @deprecated see {@link #getEventCounters()} and make a copy externally if a snapshot is needed
+   */
+  @Deprecated
+  protected synchronized List&lt;C&gt; getEventCountersCopy() {
+<span class="nc" id="L327">    return new ArrayList&lt;C&gt;(eventCounters);</span>
+  }
+
+  /**
+   * Get a the current set of event counters. The counters will be
+   * sorted in ascending order according to time, meaning the earliest counter will appear first
+   * in any iteration
+   *
+   * @return unmodifiable Collection of event counters
+   */
+  protected synchronized Collection&lt;C&gt; getEventCounters() {
+<span class="fc" id="L338">    return Collections.unmodifiableCollection(eventCounters);</span>
+  }
+
+  /**
+   * Returns the most recently added counter or null if does not exist
+   *
+   * @return EventCounter
+   */
+  protected synchronized C getMostRecentCounter() {
+<span class="nc" id="L347">    return eventCounters.peekLast();</span>
+  }
+
+  /**
+   * @return Unmodifiable iterator across windowed event counters in ascending
+   *         (oldest first) order
+   */
+  protected Iterator&lt;C&gt; eventCounterIterator() {
+<span class="nc" id="L355">    return Iterators.unmodifiableIterator(eventCounters.iterator());</span>
+  }
+
+  protected ReadableDateTime getWindowStart() {
+<span class="fc" id="L359">    return start;</span>
+  }
+
+  protected ReadableDateTime getWindowEnd() {
+<span class="nc" id="L363">    return end;</span>
+  }
+
+  protected ReadableDuration getMaxLength() {
+<span class="fc" id="L367">    return maxLength;</span>
+  }
+
+  protected ReadableDuration getMaxChunkLength() {
+<span class="fc" id="L371">    return maxChunkLength;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

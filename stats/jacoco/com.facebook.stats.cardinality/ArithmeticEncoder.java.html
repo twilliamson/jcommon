@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ArithmeticEncoder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">ArithmeticEncoder.java</span></div><h1>ArithmeticEncoder.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.facebook.stats.cardinality.Model.SymbolInfo;
+import com.google.common.base.Preconditions;
+
+import java.io.IOException;
+import java.io.OutputStream;
+
+class ArithmeticEncoder {
+  private final Model model;
+  private final OutputStream out;
+
+  private long low;
+<span class="nc" id="L29">  private long high = 0xFFFFFFFFFFFFL;</span>
+
+  private int underflowHighValue;
+  private int underflowBytes;
+
+<span class="nc" id="L34">  public ArithmeticEncoder(Model model, OutputStream out) {</span>
+<span class="nc" id="L35">    Preconditions.checkNotNull(model, &quot;model is null&quot;);</span>
+<span class="nc" id="L36">    Preconditions.checkNotNull(out, &quot;out is null&quot;);</span>
+
+<span class="nc" id="L38">    this.model = model;</span>
+<span class="nc" id="L39">    this.out = out;</span>
+<span class="nc" id="L40">  }</span>
+
+  public void encode(int symbol) throws IOException {
+    // lookup symbol data
+<span class="nc" id="L44">    SymbolInfo symbolInfo = model.getSymbolInfo(symbol);</span>
+
+    // adjust low and high counts
+<span class="nc" id="L47">    long range = (high - low + 1) &gt;&gt; model.log2MaxCount();</span>
+<span class="nc" id="L48">    high = low + (range * symbolInfo.highCount()) - 1;</span>
+<span class="nc" id="L49">    low = low + range * symbolInfo.lowCount();</span>
+
+    // write high byte if they are equal
+<span class="nc bnc" id="L52" title="All 2 branches missed.">    while ((high &amp; 0xFF0000000000L) == (low &amp; 0xFF0000000000L)) {</span>
+<span class="nc" id="L53">      int value = (int) (high &gt;&gt;&gt; 40);</span>
+<span class="nc" id="L54">      out.write(value);</span>
+
+      // write underflow bytes
+<span class="nc bnc" id="L57" title="All 2 branches missed.">      int underflowValue = (value == underflowHighValue) ? 0x00 : 0xFF;</span>
+<span class="nc bnc" id="L58" title="All 2 branches missed.">      while (underflowBytes &gt; 0) {</span>
+<span class="nc" id="L59">        out.write(underflowValue);</span>
+<span class="nc" id="L60">        underflowBytes--;</span>
+      }
+
+      // remove high byte
+<span class="nc" id="L64">      low &lt;&lt;= 8;</span>
+<span class="nc" id="L65">      high = (high &lt;&lt; 8) | 0xFF;</span>
+<span class="nc" id="L66">    }</span>
+<span class="nc" id="L67">    low &amp;= 0xFFFFFFFFFFFFL;</span>
+<span class="nc" id="L68">    high &amp;= 0xFFFFFFFFFFFFL;</span>
+
+    // handle possible underflow
+    // if top two bytes differ by only one digit
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    if ((high &gt;&gt; 32) - (low &gt;&gt; 32) == 1) {</span>
+      // if second highest bytes are 0x00 on the high and 0xFF
+      // on the low, we need to deal with underflow
+<span class="nc bnc" id="L75" title="All 4 branches missed.">      while ((high &amp; 0x00FF00000000L) == 0 &amp;&amp; (low &amp; 0x00FF00000000L) == 0x00FF00000000L) {</span>
+        // if this is the first underflow byte remember the high value
+        // so when we output later we know if we need to output 0xFF or 0x00
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        if (underflowBytes == 0) {</span>
+<span class="nc" id="L79">          underflowHighValue = (int) (high &gt;&gt;&gt; 40);</span>
+        }
+
+<span class="nc" id="L82">        underflowBytes++;</span>
+
+        // remove second chunk of low and high (shifting over lower bits)
+<span class="nc" id="L85">        low = removeUnderflowByte(low, 0x00);</span>
+<span class="nc" id="L86">        high = removeUnderflowByte(high, 0xFF);</span>
+      }
+    }
+<span class="nc" id="L89">  }</span>
+
+  public void close() throws IOException {
+    // Write out the shortest value between the high and low values
+
+
+    // if there are no underflow bytes...
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    if (underflowBytes == 0) {</span>
+      // the high byte will be separated by more then one, so the
+      // high byte plus one will be between the high and low values
+<span class="nc" id="L99">      out.write((int) (low &gt;&gt;&gt; 40) + 1);</span>
+    }
+    // we have underflow, but if the second byte is 0xFF...
+<span class="nc bnc" id="L102" title="All 2 branches missed.">    else if ((low &amp; 0x00FF00000000L) == 0x00FF00000000L) {</span>
+      // This is a complex case, that almost never happens
+      //
+      // In this case the high bytes are separated by only one, and
+      // the subsequent underflow bytes on the high are 0x00 and low 0xFF.
+      // The the final byte on the low is 0xFF and the high will be
+      // anything other than 0x00 (since this would have been considered
+      // an underflow byte).  So in decimal we have something like this:
+      //   low: 3 99999 9
+      //  high: 4 00000 1
+      //
+      // so if we simply out put the high byte of the high value, it will
+      // be between the low and high.  In the example above, that would be
+      // the equivalent of:
+      //  value: 4
+      //
+<span class="nc" id="L118">      out.write((int) (high &gt;&gt;&gt; 40));</span>
+    } else {
+      // Slightly simpler case
+      //
+      // As above high bytes are separated by one, and underflow bytes
+      // are 0xFF and 0x00 for the low and high respectively.  The final
+      // byte on the low is anything but 0xFF and the high can be anything.
+      // In decimal we have something like this:
+      //    low: 3 99999 7
+      //   high: 4 00000 0
+      //
+      // So we will need to output the high byte of the low value, the
+      // underflow bytes (0xFF), and finally the second byte of the low
+      // plus one, which will put the value between the low and the high.
+      // In the example above, that would be the equivalent of:
+      //  value: 3 99999 8
+
+      // write the high byte of the low value
+<span class="nc" id="L136">      out.write((int) (low &gt;&gt;&gt; 40));</span>
+
+      // write the underflow bytes for the low (0xFF)
+<span class="nc bnc" id="L139" title="All 2 branches missed.">      while (underflowBytes &gt; 0) {</span>
+<span class="nc" id="L140">        out.write(0xFF);</span>
+<span class="nc" id="L141">        underflowBytes--;</span>
+      }
+
+      // write the second byte of the low value plus one to put it
+      // between the low and high
+<span class="nc" id="L146">      int secondByte = (int) ((low &gt;&gt;&gt; 32) &amp; 0xFF);</span>
+<span class="nc" id="L147">      out.write(secondByte + 1);</span>
+    }
+<span class="nc" id="L149">  }</span>
+
+  public static long removeUnderflowByte(long value, int backFillValue) {
+<span class="nc" id="L152">    long highBits = (value &amp; 0xFF0000000000L);</span>
+<span class="nc" id="L153">    long lowBits = (value &amp; 0x0000FFFFFFFFL) &lt;&lt; 8;</span>
+<span class="nc" id="L154">    long newValue = highBits | lowBits | backFillValue;</span>
+<span class="nc" id="L155">    return newValue;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

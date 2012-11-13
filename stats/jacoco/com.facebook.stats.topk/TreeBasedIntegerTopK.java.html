@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TreeBasedIntegerTopK.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.topk</a> &gt; <span class="el_source">TreeBasedIntegerTopK.java</span></div><h1>TreeBasedIntegerTopK.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.topk;
+
+import com.facebook.collections.ComparablePair;
+import com.google.common.base.Preconditions;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.TreeSet;
+
+/*
+ * Tree-based implementation of integer key streaming top-k.
+ * This version is optimized for fast retrieval of the top k elements.
+ * Time complexity of add() is O(log k) worst case, O(1) best case.
+ * Time complexity of getTopK() is O(k).
+ * Space usage is O(n + k).
+ * (n = keySpaceSize)
+ */
+public class TreeBasedIntegerTopK implements TopK&lt;Integer&gt; {
+  private final int k;
+  private final long[] counts;
+  private final boolean[] isInTop;
+<span class="fc" id="L37">  private final TreeSet&lt;ComparablePair&lt;Long, Integer&gt;&gt; topPairs =</span>
+    new TreeSet&lt;ComparablePair&lt;Long, Integer&gt;&gt;();
+<span class="fc" id="L39">  private long smallestTopCount = Long.MAX_VALUE;</span>
+
+<span class="fc" id="L41">  public TreeBasedIntegerTopK(int keySpaceSize, int k) {</span>
+<span class="fc" id="L42">    this.k = k;</span>
+<span class="fc" id="L43">    counts = new long[keySpaceSize];</span>
+<span class="fc" id="L44">    isInTop = new boolean[keySpaceSize];</span>
+<span class="fc" id="L45">  }</span>
+
+  /*
+   * Cost of an add() operation is O(log k) if the candidate has to be inserted in
+   * the current top-k elements, O(1) otherwise.
+   */
+  @Override
+  public synchronized void add(Integer key, long count) {
+<span class="fc" id="L53">    Preconditions.checkNotNull(key, &quot;key can't be null&quot;);</span>
+<span class="fc" id="L54">    Preconditions.checkElementIndex(key, counts.length, &quot;key&quot;);</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">    Preconditions.checkArgument(count &gt;= 0, &quot;count to add must be non-negative, got %s&quot;, count);</span>
+
+<span class="fc bfc" id="L57" title="All 2 branches covered.">    if (count == 0) {</span>
+<span class="fc" id="L58">      return;</span>
+    }
+
+<span class="fc" id="L61">    long currentCount = counts[key];</span>
+
+<span class="fc" id="L63">    counts[key] += count;</span>
+
+<span class="fc bfc" id="L65" title="All 2 branches covered.">    if (isInTop[key]) {</span>
+<span class="fc" id="L66">      topPairs.remove(new ComparablePair&lt;Long, Integer&gt;(currentCount, key));</span>
+<span class="fc" id="L67">      topPairs.add(new ComparablePair&lt;Long, Integer&gt;(counts[key], key));</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">    } else if (topPairs.size() &lt; k) {</span>
+<span class="fc" id="L69">      topPairs.add(new ComparablePair&lt;Long, Integer&gt;(counts[key], key));</span>
+<span class="fc" id="L70">      isInTop[key] = true;</span>
+<span class="fc" id="L71">      smallestTopCount = Math.min(smallestTopCount, counts[key]);</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">    } else if (counts[key] &gt; smallestTopCount) {</span>
+<span class="fc" id="L73">      ComparablePair&lt;Long, Integer&gt; smallestTopPair = topPairs.pollFirst();</span>
+
+<span class="fc" id="L75">      isInTop[smallestTopPair.getSecond()] = false;</span>
+<span class="fc" id="L76">      topPairs.add(new ComparablePair&lt;Long, Integer&gt;(counts[key], key));</span>
+<span class="fc" id="L77">      isInTop[key] = true;</span>
+<span class="fc" id="L78">      smallestTopCount = topPairs.first().getFirst();</span>
+    }
+<span class="fc" id="L80">  }</span>
+
+  @Override
+  public synchronized List&lt;Integer&gt; getTopK() {
+<span class="fc" id="L84">    LinkedList&lt;Integer&gt; topK = new LinkedList&lt;Integer&gt;();</span>
+
+<span class="fc bfc" id="L86" title="All 2 branches covered.">    for (ComparablePair&lt;Long, Integer&gt; pair : topPairs) {</span>
+<span class="fc" id="L87">      topK.addFirst(pair.getSecond());</span>
+<span class="fc" id="L88">    }</span>
+
+<span class="fc" id="L90">    return topK;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>BucketAndHash.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">BucketAndHash.java</span></div><h1>BucketAndHash.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import static com.google.common.base.Preconditions.checkArgument;
+
+public class BucketAndHash {
+  private final int bucket;
+  private final long hash;
+
+<span class="fc" id="L24">  BucketAndHash(int bucket, long hash) {</span>
+<span class="fc" id="L25">    this.bucket = bucket;</span>
+<span class="fc" id="L26">    this.hash = hash;</span>
+<span class="fc" id="L27">  }</span>
+
+  /**
+   * Extracts the bucket and truncated hash from the given 64-bit hash.
+   *
+   * Only the 64-log2(numberOfBuckets) least significant bits of the resulting hash are usable
+   */
+  public static BucketAndHash fromHash(long hash, int numberOfBuckets)
+  {
+<span class="fc" id="L36">    checkArgument(Numbers.isPowerOf2(numberOfBuckets), &quot;numberOfBuckets must be a power of 2&quot;);</span>
+
+    // bucket comes from the bottommost log2(numberOfBuckets) bits
+<span class="fc" id="L39">    int bucketMask = numberOfBuckets - 1;</span>
+<span class="fc" id="L40">    int bucket = (int) (hash &amp; bucketMask);</span>
+
+    // hyperloglog will count number of trailing zeros, so fill in with ones at the top to avoid
+    // the msb bits affecting the count (very unlikely, but...)
+
+    // first, set the top most bit
+<span class="fc" id="L46">    hash |= 1L &lt;&lt; (Long.SIZE - 1);</span>
+
+    // then, shift with sign propagation to fill with ones
+<span class="fc" id="L49">    int bits = Integer.numberOfTrailingZeros(numberOfBuckets); // log2(numberOfBuckets)</span>
+<span class="fc" id="L50">    hash &gt;&gt;= bits;</span>
+
+<span class="fc" id="L52">    return new BucketAndHash(bucket, hash);</span>
+  }
+
+  public int getBucket() {
+<span class="fc" id="L56">    return bucket;</span>
+  }
+
+  public long getHash() {
+<span class="fc" id="L60">    return hash;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

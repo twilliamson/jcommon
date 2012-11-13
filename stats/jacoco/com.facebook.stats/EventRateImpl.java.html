@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>EventRateImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">EventRateImpl.java</span></div><h1>EventRateImpl.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+
+public class EventRateImpl implements EventRate {
+  private final EventCounterIf&lt;EventCounter&gt; counter;
+  private final Duration windowSize;
+  private final ReadableDateTime start;
+
+  EventRateImpl(
+    EventCounterIf&lt;EventCounter&gt; counter, Duration windowSize, ReadableDateTime start
+<span class="fc" id="L29">  ) {</span>
+<span class="fc" id="L30">    this.counter = counter;</span>
+<span class="fc" id="L31">    this.windowSize = windowSize;</span>
+<span class="fc" id="L32">    this.start = start;</span>
+<span class="fc" id="L33">  }</span>
+
+  public EventRateImpl(EventCounterIf&lt;EventCounter&gt; counter, Duration windowSize) {
+<span class="fc" id="L36">    this(counter, windowSize, new DateTime());</span>
+<span class="fc" id="L37">  }</span>
+
+  @Override
+  public void add(long delta) {
+<span class="fc" id="L41">    counter.add(delta);</span>
+<span class="fc" id="L42">  }</span>
+
+  @Override
+  public long getValue() {
+<span class="fc" id="L46">    Duration periodSize = getPeriodSize();</span>
+
+<span class="fc bfc" id="L48" title="All 2 branches covered.">    if (periodSize.getStandardSeconds() == 0) {</span>
+<span class="fc" id="L49">      return 0;</span>
+    }
+
+<span class="fc" id="L52">    return counter.getValue() / periodSize.getStandardSeconds();</span>
+  }
+
+  private Duration getPeriodSize() {
+    // normalize by the time since server start
+<span class="fc" id="L57">    ReadableDateTime now = new DateTime();</span>
+<span class="fc" id="L58">    Duration periodSize = new Duration(start, now);</span>
+
+<span class="fc bfc" id="L60" title="All 2 branches covered.">    if (periodSize.isLongerThan(windowSize)) {</span>
+<span class="fc" id="L61">      return windowSize;</span>
+    } else {
+<span class="fc" id="L63">      return periodSize;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

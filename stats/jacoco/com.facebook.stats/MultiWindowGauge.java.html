@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MultiWindowGauge.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">MultiWindowGauge.java</span></div><h1>MultiWindowGauge.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeUtils;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+
+public class MultiWindowGauge implements ReadableMultiWindowGauge, WritableMultiWindowStat {
+  private final GaugeCounterFactory gaugeCounterFactory;
+  // all-time counter is a windowed counter that is effectively unbounded
+  private final CompositeGaugeCounter allTimeCounter;
+  private final CompositeGaugeCounter hourCounter;
+  private final CompositeGaugeCounter tenMinuteCounter;
+  private final CompositeGaugeCounter minuteCounter;
+  private volatile GaugeCounter currentCounter;
+  private final ReadableDateTime start;
+
+<span class="fc" id="L33">  private final Object rollLock = new Object();</span>
+
+
+  public MultiWindowGauge() {
+<span class="fc" id="L37">    this(DefaultGaugeCounterFactory.INSTANCE);</span>
+<span class="fc" id="L38">  }</span>
+
+  public MultiWindowGauge(GaugeCounterFactory gaugeCounterFactory) {
+<span class="fc" id="L41">    this(</span>
+      gaugeCounterFactory,
+      newCompositeGaugeCounter(Integer.MAX_VALUE, gaugeCounterFactory),
+      newCompositeGaugeCounter(60, gaugeCounterFactory),
+      newCompositeGaugeCounter(10, gaugeCounterFactory),
+      newCompositeGaugeCounter(1, gaugeCounterFactory),
+      new DateTime()
+    );
+<span class="fc" id="L49">  }</span>
+
+  MultiWindowGauge(
+    GaugeCounterFactory gaugeCounterFactory,
+    CompositeGaugeCounter allTimeCounter,
+    CompositeGaugeCounter hourCounter,
+    CompositeGaugeCounter tenMinuteCounter,
+    CompositeGaugeCounter minuteCounter,
+    ReadableDateTime start
+<span class="fc" id="L58">  ) {</span>
+<span class="fc" id="L59">    this.gaugeCounterFactory = gaugeCounterFactory;</span>
+<span class="fc" id="L60">    this.allTimeCounter = allTimeCounter;</span>
+<span class="fc" id="L61">    this.hourCounter = hourCounter;</span>
+<span class="fc" id="L62">    this.tenMinuteCounter = tenMinuteCounter;</span>
+<span class="fc" id="L63">    this.minuteCounter = minuteCounter;</span>
+<span class="fc" id="L64">    this.start = start;</span>
+<span class="fc" id="L65">    currentCounter = nextCurrentCounter();</span>
+<span class="fc" id="L66">  }</span>
+
+  private static CompositeGaugeCounter newCompositeGaugeCounter(
+    int minutes, GaugeCounterFactory gaugeCounterFactory
+  ) {
+<span class="fc" id="L71">    return new CompositeGaugeCounter(</span>
+      Duration.standardMinutes(minutes), gaugeCounterFactory
+    );
+  }
+
+  @Override
+  public void add(long delta) {
+<span class="fc" id="L78">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L79">    currentCounter.add(delta);</span>
+<span class="fc" id="L80">  }</span>
+
+  private void rollCurrentIfNeeded() {
+    // do outside the synchronized block
+<span class="fc" id="L84">    long now = DateTimeUtils.currentTimeMillis();</span>
+    // this is false for the majority of calls, so skip lock acquisition
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">    if (currentCounter.getEnd().getMillis() &lt; now) {</span>
+<span class="nc" id="L87">      synchronized (rollLock) {</span>
+        // lock and re-check
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (currentCounter.getEnd().getMillis() &lt; now) {</span>
+<span class="nc" id="L90">          currentCounter = nextCurrentCounter();</span>
+        }
+<span class="nc" id="L92">      }</span>
+    }
+<span class="fc" id="L94">  }</span>
+
+  private long calcRate(EventCounterIf&lt;GaugeCounter&gt; counter) {
+<span class="fc" id="L97">    long value = counter.getValue();</span>
+<span class="fc" id="L98">    ReadableDateTime end = counter.getEnd();</span>
+<span class="fc" id="L99">    ReadableDateTime start = counter.getStart();</span>
+<span class="fc" id="L100">    ReadableDateTime now = new DateTime();</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">    Duration duration = now.isBefore(end) ?</span>
+      new Duration(start, now) :    // so far
+      new Duration(start, end);
+<span class="fc" id="L104">    long secs = duration.getStandardSeconds();</span>
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">    return secs &gt; 0 ? value / secs : value;</span>
+  }
+
+  @Override
+  public long getMinuteSum() {
+<span class="fc" id="L110">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L111">    return minuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getMinuteSamples() {
+<span class="fc" id="L116">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L117">    return minuteCounter.getSamples();</span>
+  }
+
+  @Override
+  public long getMinuteAvg() {
+<span class="fc" id="L122">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L123">    return minuteCounter.getAverage();</span>
+  }
+
+  @Override
+  public long getMinuteRate() {
+<span class="fc" id="L128">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L129">    return calcRate(minuteCounter);</span>
+  }
+
+  @Override
+  public long getTenMinuteSum() {
+<span class="fc" id="L134">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L135">    return tenMinuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getTenMinuteSamples() {
+<span class="fc" id="L140">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L141">    return tenMinuteCounter.getSamples();</span>
+  }
+
+  @Override
+  public long getTenMinuteAvg() {
+<span class="fc" id="L146">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L147">    return tenMinuteCounter.getAverage();</span>
+  }
+
+  @Override
+  public long getTenMinuteRate() {
+<span class="fc" id="L152">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L153">    return calcRate(tenMinuteCounter);</span>
+  }
+
+  @Override
+  public long getHourSum() {
+<span class="fc" id="L158">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L159">    return hourCounter.getValue();</span>
+  }
+
+  @Override
+  public long getHourSamples() {
+<span class="fc" id="L164">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L165">    return hourCounter.getSamples();</span>
+  }
+
+  @Override
+  public long getHourAvg() {
+<span class="fc" id="L170">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L171">    return hourCounter.getAverage();</span>
+  }
+
+  @Override
+  public long getHourRate() {
+<span class="fc" id="L176">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L177">    return calcRate(hourCounter);</span>
+  }
+
+  @Override
+  public long getAllTimeSum() {
+<span class="fc" id="L182">    return allTimeCounter.getValue();</span>
+  }
+
+  @Override
+  public long getAllTimeSamples() {
+<span class="fc" id="L187">    return allTimeCounter.getSamples();</span>
+  }
+
+  @Override
+  public long getAllTimeAvg() {
+<span class="fc" id="L192">    return allTimeCounter.getAverage();</span>
+  }
+
+  @Override
+  public long getAllTimeRate() {
+<span class="fc" id="L197">    Duration sinceStart = new Duration(start, new DateTime());</span>
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">    if (sinceStart.getStandardSeconds() == 0) {</span>
+<span class="fc" id="L199">      return 0;</span>
+    }
+<span class="nc" id="L201">    return allTimeCounter.getValue() / sinceStart.getStandardSeconds();</span>
+  }
+
+  /*
+   * Create a new counter for the next 6 secs and add it to all the
+   * composite counters.
+   */
+  private GaugeCounter nextCurrentCounter() {
+<span class="fc" id="L209">    ReadableDateTime now = new DateTime();</span>
+<span class="fc" id="L210">    GaugeCounter gaugeCounter = gaugeCounterFactory.create(</span>
+      now, now.toDateTime().plusSeconds(6)
+    );
+
+<span class="fc" id="L214">    allTimeCounter.addEventCounter(gaugeCounter);</span>
+<span class="fc" id="L215">    hourCounter.addEventCounter(gaugeCounter);</span>
+<span class="fc" id="L216">    tenMinuteCounter.addEventCounter(gaugeCounter);</span>
+<span class="fc" id="L217">    minuteCounter.addEventCounter(gaugeCounter);</span>
+
+<span class="fc" id="L219">    return gaugeCounter;</span>
+  }
+
+  public MultiWindowGauge merge(MultiWindowGauge rhs) {
+<span class="pc bpc" id="L223" title="1 of 2 branches missed.">    return new MultiWindowGauge(</span>
+      gaugeCounterFactory,
+      (CompositeGaugeCounter)allTimeCounter.merge(rhs.allTimeCounter),
+      (CompositeGaugeCounter)hourCounter.merge(rhs.hourCounter),
+      (CompositeGaugeCounter)tenMinuteCounter.merge(rhs.tenMinuteCounter),
+      (CompositeGaugeCounter)minuteCounter.merge(rhs.minuteCounter),
+      start.isBefore(rhs.start) ? start : rhs.start
+    );
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

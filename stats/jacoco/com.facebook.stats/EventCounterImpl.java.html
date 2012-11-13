@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>EventCounterImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">EventCounterImpl.java</span></div><h1>EventCounterImpl.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * reference implementation of a simple counter for a bounded period of time
+ */
+public class EventCounterImpl implements EventCounter {
+  private final ReadableDateTime start;
+  private final ReadableDateTime end;
+  private final AtomicLong value;
+
+<span class="fc" id="L30">  public EventCounterImpl(ReadableDateTime start, ReadableDateTime end, long initialValue) {</span>
+<span class="pc bpc" id="L31" title="1 of 2 branches missed.">    if (start.isAfter(end)) {</span>
+<span class="nc" id="L32">      this.start = end;</span>
+<span class="nc" id="L33">      this.end = start;</span>
+    } else {
+<span class="fc" id="L35">      this.start = start;</span>
+<span class="fc" id="L36">      this.end = end;</span>
+    }
+
+<span class="fc" id="L39">    this.value = new AtomicLong(initialValue);</span>
+<span class="fc" id="L40">  }</span>
+
+  public EventCounterImpl(ReadableDateTime start, ReadableDateTime end) {
+<span class="fc" id="L43">    this(start, end, 0L);</span>
+<span class="fc" id="L44">  }</span>
+
+  public void add(long delta) {
+<span class="fc" id="L47">    value.addAndGet(delta);</span>
+<span class="fc" id="L48">  }</span>
+
+  public long getValue() {
+<span class="fc" id="L51">    return value.get();</span>
+  }
+
+  public ReadableDateTime getStart() {
+<span class="fc" id="L55">    return start;</span>
+  }
+
+  public ReadableDateTime getEnd() {
+<span class="fc" id="L59">    return end;</span>
+  }
+
+  @Override
+
+  public Duration getLength() {
+<span class="nc" id="L65">    return new Duration(start, end);</span>
+  }
+
+  @Override
+  public EventCounter merge(EventCounter counter) {
+<span class="fc" id="L70">    ReadableDateTime mergedStart = start;</span>
+<span class="fc" id="L71">    ReadableDateTime mergedEnd = end;</span>
+
+<span class="fc bfc" id="L73" title="All 2 branches covered.">    if (counter.getStart().isBefore(mergedStart)) {</span>
+<span class="fc" id="L74">      mergedStart = counter.getStart();</span>
+    }
+
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">    if (counter.getEnd().isAfter(mergedEnd)) {</span>
+<span class="nc" id="L78">      mergedEnd = counter.getEnd();</span>
+    }
+
+<span class="fc" id="L81">    EventCounterImpl mergedCounter = new EventCounterImpl(mergedStart, mergedEnd);</span>
+
+<span class="fc" id="L83">    mergedCounter.add(value.get() + counter.getValue());</span>
+
+<span class="fc" id="L85">    return mergedCounter;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

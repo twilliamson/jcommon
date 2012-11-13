@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DenseEstimator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats.cardinality</a> &gt; <span class="el_source">DenseEstimator.java</span></div><h1>DenseEstimator.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats.cardinality;
+
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.NotThreadSafe;
+
+/**
+ * A hyperloglog-based cardinality estimator that uses exactly 4 bits per bucket, regardless of the
+ * cardinality being estimated.
+ * &lt;p/&gt;
+ * It is based on the observation that for any given cardinality, the majority of all values fall in
+ * a range that is at most 4-bit wide. Moreover, the window only moves to the &quot;right&quot; because the
+ * values in a bucket never decrease.
+ * &lt;p/&gt;
+ * Whenever a value is seen that falls outside of the current window it is truncated to the window
+ * upper bound. This introduces a minor error in the estimation that is smaller than 0.01% based on
+ * experiments.
+ */
+@NotThreadSafe
+class DenseEstimator
+  implements Estimator {
+  private static final int BITS_PER_BUCKET = 4;
+  private static final int BUCKET_MAX_VALUE = (1 &lt;&lt; BITS_PER_BUCKET) - 1;
+  private static final int BUCKETS_PER_SLOT = Long.SIZE / BITS_PER_BUCKET;
+  private static final long BUCKET_MASK = (1L &lt;&lt; BITS_PER_BUCKET) - 1;
+
+<span class="nc" id="L42">  private static final int INSTANCE_SIZE = UnsafeUtil.sizeOf(DenseEstimator.class);</span>
+
+  private final int numberOfBuckets;
+  private final long[] slots;
+
+  private double currentSum; // the current sum(1 / (1 &lt;&lt; (bucket[i] + baseline)))
+  private byte baseline; // the lower bound of the current window
+  private short baselineCount; // the number of buckets who's value is at the lower bound
+
+<span class="nc" id="L51">  public DenseEstimator(int numberOfBuckets) {</span>
+<span class="nc" id="L52">    Preconditions.checkArgument(</span>
+      Numbers.isPowerOf2(numberOfBuckets),
+      &quot;numberOfBuckets must be a power of 2&quot;
+    );
+
+<span class="nc" id="L57">    this.numberOfBuckets = numberOfBuckets;</span>
+<span class="nc" id="L58">    this.baseline = 0;</span>
+<span class="nc" id="L59">    this.baselineCount = (short) numberOfBuckets;</span>
+<span class="nc" id="L60">    this.currentSum = numberOfBuckets;</span>
+
+<span class="nc" id="L62">    int slotCount = (numberOfBuckets + BUCKETS_PER_SLOT - 1) / BUCKETS_PER_SLOT;</span>
+<span class="nc" id="L63">    slots = new long[slotCount];</span>
+<span class="nc" id="L64">  }</span>
+
+  public DenseEstimator(int[] bucketValues) {
+<span class="nc" id="L67">    this(bucketValues.length);</span>
+
+    // first, compute the baseline and count of baseline values
+<span class="nc" id="L70">    baseline = Byte.MAX_VALUE;</span>
+<span class="nc" id="L71">    baselineCount = 0;</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    for (int value : bucketValues) {</span>
+<span class="nc bnc" id="L73" title="All 4 branches missed.">      Preconditions.checkArgument(</span>
+        value &gt;= 0 &amp;&amp; value &lt;= Byte.MAX_VALUE,
+        &quot;values must be &gt;= 0 and &lt;= %s, found %s&quot;,
+        Byte.MAX_VALUE,
+        value
+      );
+<span class="nc bnc" id="L79" title="All 2 branches missed.">      if (value &lt; baseline) {</span>
+<span class="nc" id="L80">        baselineCount = 1;</span>
+<span class="nc" id="L81">        baseline = (byte) value;</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">      } else if (value == baseline) {</span>
+<span class="nc" id="L83">        ++baselineCount;</span>
+      }
+    }
+
+<span class="nc" id="L87">    currentSum = 0;</span>
+
+    // then set all values (rescaled)
+<span class="nc" id="L90">    int bucket = 0;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    for (int value : bucketValues) {</span>
+<span class="nc" id="L92">      set(bucket, value - baseline);</span>
+<span class="nc" id="L93">      currentSum += 1.0 / (1L &lt;&lt; value);</span>
+<span class="nc" id="L94">      ++bucket;</span>
+    }
+<span class="nc" id="L96">  }</span>
+
+  public int getNumberOfBuckets() {
+<span class="nc" id="L99">    return numberOfBuckets;</span>
+  }
+
+  @Override
+  public int getMaxAllowedBucketValue() {
+<span class="nc" id="L104">    return Byte.MAX_VALUE;</span>
+  }
+
+  @Override
+  public boolean setIfGreater(int bucket, int highestBitPosition) {
+<span class="nc" id="L109">    int relativeHighestBitPosition = highestBitPosition - baseline;</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (relativeHighestBitPosition &gt; BUCKET_MAX_VALUE) {</span>
+      // we can't fit this in BITS_PER_BUCKET, so truncate (it shouldn't affect results
+      // significantly due to the low probability of this happening)
+<span class="nc" id="L113">      relativeHighestBitPosition = BUCKET_MAX_VALUE;</span>
+    }
+
+<span class="nc" id="L116">    int oldValue = get(bucket);</span>
+
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    if (relativeHighestBitPosition &lt;= oldValue) {</span>
+<span class="nc" id="L119">      return false;</span>
+    }
+
+<span class="nc" id="L122">    set(bucket, relativeHighestBitPosition);</span>
+
+<span class="nc" id="L124">    currentSum -= 1.0 / (1L &lt;&lt; (oldValue + baseline));</span>
+<span class="nc" id="L125">    currentSum += 1.0 / (1L &lt;&lt; (relativeHighestBitPosition + baseline));</span>
+
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    if (oldValue == 0) {</span>
+<span class="nc" id="L128">      --baselineCount;</span>
+<span class="nc" id="L129">      rescaleAndRecomputeBaseCountIfNeeded();</span>
+    }
+
+<span class="nc" id="L132">    return true;</span>
+  }
+
+  private void set(int bucket, int value) {
+<span class="nc" id="L136">    int slot = bucket / BUCKETS_PER_SLOT;</span>
+<span class="nc" id="L137">    int offset = bucket % BUCKETS_PER_SLOT;</span>
+
+    // clear the old value
+<span class="nc" id="L140">    long bucketClearMask = BUCKET_MASK &lt;&lt; (offset * BITS_PER_BUCKET);</span>
+<span class="nc" id="L141">    slots[slot] &amp;= ~bucketClearMask;</span>
+
+    // set the new value
+<span class="nc" id="L144">    long bucketSetMask = ((long) value) &lt;&lt; (offset * BITS_PER_BUCKET);</span>
+<span class="nc" id="L145">    slots[slot] |= bucketSetMask;</span>
+<span class="nc" id="L146">  }</span>
+
+  /**
+   * gets the value in the specified bucket relative to the current base
+   */
+  private int get(int bucket) {
+<span class="nc" id="L152">    int slot = bucket / BUCKETS_PER_SLOT;</span>
+<span class="nc" id="L153">    int offset = bucket % BUCKETS_PER_SLOT;</span>
+
+<span class="nc" id="L155">    return (int) ((slots[slot] &gt;&gt; (offset * BITS_PER_BUCKET)) &amp; BUCKET_MASK);</span>
+  }
+
+  private void rescaleAndRecomputeBaseCountIfNeeded() {
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    while (baselineCount == 0) {</span>
+      // no more values at the lower bound, so shift the window to the right
+
+<span class="nc" id="L162">      ++baseline;</span>
+<span class="nc" id="L163">      baselineCount = 0;</span>
+
+      // and re-scale all current buckets
+<span class="nc bnc" id="L166" title="All 2 branches missed.">      for (int i = 0; i &lt; numberOfBuckets; ++i) {</span>
+<span class="nc" id="L167">        int value = get(i);</span>
+<span class="nc" id="L168">        --value;</span>
+
+<span class="nc" id="L170">        set(i, value);</span>
+
+<span class="nc bnc" id="L172" title="All 2 branches missed.">        if (value == 0) {</span>
+          // re-calculate the number of buckets who's value is at the lower bound
+<span class="nc" id="L174">          ++baselineCount;</span>
+        }
+      }
+    }
+<span class="nc" id="L178">  }</span>
+
+  @Override
+  public long estimate() {
+<span class="nc" id="L182">    double alpha = HyperLogLogUtil.computeAlpha(numberOfBuckets);</span>
+<span class="nc" id="L183">    double result = alpha * numberOfBuckets * numberOfBuckets / currentSum;</span>
+
+<span class="nc bnc" id="L185" title="All 2 branches missed.">    if (result &lt;= 2.5 * numberOfBuckets) {</span>
+      // adjust for small cardinalities
+<span class="nc bnc" id="L187" title="All 4 branches missed.">      if (baseline == 0 &amp;&amp; baselineCount &gt; 0) {</span>
+        // baselineCount is the number of buckets with value 0
+<span class="nc" id="L189">        result = numberOfBuckets * Math.log(numberOfBuckets * 1.0 / baselineCount);</span>
+      }
+    }
+
+<span class="nc" id="L193">    return Math.round(result);</span>
+  }
+
+  @Override
+  public int estimateSizeInBytes() {
+<span class="nc" id="L198">    return estimateSizeInBytes(numberOfBuckets);</span>
+  }
+
+  public static int estimateSizeInBytes(int numberOfBuckets) {
+<span class="nc" id="L202">    return (numberOfBuckets + BUCKETS_PER_SLOT - 1) / BUCKETS_PER_SLOT * Long.SIZE / 8</span>
+      + INSTANCE_SIZE;
+  }
+
+  public int[] buckets() {
+<span class="nc" id="L207">    int[] result = new int[numberOfBuckets];</span>
+
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    for (int i = 0; i &lt; numberOfBuckets; ++i) {</span>
+<span class="nc" id="L210">      result[i] = get(i) + baseline;</span>
+    }
+
+<span class="nc" id="L213">    return result;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>

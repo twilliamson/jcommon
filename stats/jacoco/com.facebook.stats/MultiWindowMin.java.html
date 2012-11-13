@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MultiWindowMin.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="right"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">stats</a> &gt; <a href="index.html" class="el_package">com.facebook.stats</a> &gt; <span class="el_source">MultiWindowMin.java</span></div><h1>MultiWindowMin.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (C) 2012 Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.stats;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeUtils;
+import org.joda.time.Duration;
+import org.joda.time.ReadableDateTime;
+import org.joda.time.ReadableDuration;
+
+public class MultiWindowMin implements ReadableMultiWindowCounter, WritableMultiWindowStat {
+<span class="fc" id="L25">  private static final ReadableDuration COUNTER_GRANULARITY =</span>
+    Duration.standardSeconds(6);
+
+<span class="fc" id="L28">  private final Object rollLock = new Object();</span>
+  private final CompositeMin allTimeCounter;
+  private final CompositeMin hourCounter;
+  private final CompositeMin tenMinuteCounter;
+  private final CompositeMin minuteCounter;
+  private volatile EventCounterIf&lt;EventCounter&gt; currentCounter;
+
+  MultiWindowMin(
+    CompositeMin allTimeCounter,
+    CompositeMin hourCounter,
+    CompositeMin tenMinuteCounter,
+    CompositeMin minuteCounter
+<span class="fc" id="L40">  ) {</span>
+<span class="fc" id="L41">    this.allTimeCounter = allTimeCounter;</span>
+<span class="fc" id="L42">    this.hourCounter = hourCounter;</span>
+<span class="fc" id="L43">    this.tenMinuteCounter = tenMinuteCounter;</span>
+<span class="fc" id="L44">    this.minuteCounter = minuteCounter;</span>
+<span class="fc" id="L45">    currentCounter = addNewCurrentCounter();</span>
+<span class="fc" id="L46">  }</span>
+
+  public MultiWindowMin() {
+<span class="fc" id="L49">    this(</span>
+      new CompositeMin(Duration.standardMinutes(Integer.MAX_VALUE)),
+      new CompositeMin(Duration.standardMinutes(60)),
+      new CompositeMin(Duration.standardMinutes(10)),
+      new CompositeMin(Duration.standardMinutes(1))
+    );
+<span class="fc" id="L55">  }</span>
+
+  @Override
+  public void add(long value) {
+<span class="fc" id="L59">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L60">    currentCounter.add(value);</span>
+<span class="fc" id="L61">  }</span>
+
+  @Override
+  public long getMinuteValue() {
+<span class="fc" id="L65">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L66">    return minuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getTenMinuteValue() {
+<span class="fc" id="L71">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L72">    return tenMinuteCounter.getValue();</span>
+  }
+
+  @Override
+  public long getHourValue() {
+<span class="fc" id="L77">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L78">    return hourCounter.getValue();</span>
+  }
+
+  @Override
+  public long getAllTimeValue() {
+<span class="fc" id="L83">    rollCurrentIfNeeded();</span>
+<span class="fc" id="L84">    return allTimeCounter.getValue();</span>
+  }
+
+  private void rollCurrentIfNeeded() {
+    //do outside the synchronized block
+<span class="fc" id="L89">    long now = DateTimeUtils.currentTimeMillis();</span>
+    // this is false for the majority of calls, so skip lock acquisition
+<span class="fc bfc" id="L91" title="All 2 branches covered.">    if (currentCounter.getEnd().getMillis() &lt; now) {</span>
+<span class="fc" id="L92">      synchronized (rollLock) {</span>
+        // lock and re-check
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">        if (currentCounter.getEnd().getMillis() &lt; now) {</span>
+<span class="fc" id="L95">          currentCounter = addNewCurrentCounter();</span>
+        }
+<span class="pc" id="L97">      }</span>
+    }
+<span class="fc" id="L99">  }</span>
+
+  private MinEventCounter addNewCurrentCounter() {
+<span class="fc" id="L102">    ReadableDateTime now = new DateTime();</span>
+
+<span class="fc" id="L104">    MinEventCounter minEventCounter = new MinEventCounter(</span>
+      now,
+      now.toDateTime().plus(COUNTER_GRANULARITY)
+    );
+
+<span class="fc" id="L109">    allTimeCounter.addEventCounter(minEventCounter);</span>
+<span class="fc" id="L110">    hourCounter.addEventCounter(minEventCounter);</span>
+<span class="fc" id="L111">    tenMinuteCounter.addEventCounter(minEventCounter);</span>
+<span class="fc" id="L112">    minuteCounter.addEventCounter(minEventCounter);</span>
+
+<span class="fc" id="L114">    return minEventCounter;</span>
+  }
+
+  public MultiWindowMin merge(MultiWindowMin other) {
+<span class="nc" id="L118">    return new MultiWindowMin(</span>
+      (CompositeMin) allTimeCounter.merge(other.allTimeCounter),
+      (CompositeMin) hourCounter.merge(other.hourCounter),
+      (CompositeMin) tenMinuteCounter.merge(other.tenMinuteCounter),
+      (CompositeMin) minuteCounter.merge(other.minuteCounter)
+    );
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.6.0.201210061924</span></div></body></html>
